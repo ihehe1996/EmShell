@@ -18,9 +18,9 @@ Windows 上的服务器连接工具。深色界面，内置终端，把常用的
 
 打开 [Releases](https://github.com/ihehe1996/EmShell/releases) 页面，下载最新版本。两种方式任选：
 
-- **安装版（推荐）**：`EmShell-v1.0.0-install.exe`
+- **安装版（推荐）**：`EmShell-v1.0.1-install.exe`
   双击安装，可以装到 `Program Files`，自动创建开始菜单/桌面快捷方式，并在 Windows 的「应用和功能」里生成卸载项。
-- **便携版**：`EmShell-1.0.0-win64.zip`
+- **便携版**：`EmShell-1.0.1-win64.zip`
   解压到任意目录，双击 `EmShell.exe` 即可运行。
 
 安装版会自动处理好自动更新需要的目录权限；便携版如果放在 `Program Files` 之类受保护的位置，更新时可能需要手动下载替换。
