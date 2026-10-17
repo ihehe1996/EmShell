@@ -41,10 +41,16 @@ QString formatBytes(qint64 bytes)
 
 UpdateDialog::UpdateDialog(QWidget *parent) : QDialog(parent)
 {
-    setWindowTitle(QStringLiteral("检查更新"));
-    setMinimumWidth(520);
+    setWindowTitle(QStringLiteral("软件更新"));
+    setMinimumWidth(560);
 
     m_headline = makeLabel(QString(), "dialogHeadline", this);
+
+    // 标题左边带一下应用图标，看起来才像「EmShell 的更新」，而不是一个
+    // 凭空冒出来的系统对话框。
+    auto *mark = new QLabel(this);
+    mark->setFixedSize(28, 28);
+    mark->setPixmap(windowIcon().pixmap(28, 28));
 
     m_detail = makeLabel(QString(), "dialogDetail", this);
     m_detail->setWordWrap(true);
@@ -58,7 +64,7 @@ UpdateDialog::UpdateDialog(QWidget *parent) : QDialog(parent)
     // markdown 渲染出来的正文，深色主题下会变成一片黑字。
     m_notes = new QTextBrowser(this);
     m_notes->setOpenExternalLinks(true);
-    m_notes->setMinimumHeight(160);
+    m_notes->setMinimumHeight(120);
     {
         QPalette palette = m_notes->palette();
         palette.setColor(QPalette::Base, Theme::color(QStringLiteral("bg-input")));
@@ -99,7 +105,7 @@ UpdateDialog::UpdateDialog(QWidget *parent) : QDialog(parent)
             break;
         }
     });
-    connect(m_secondary, &QPushButton::clicked, this, [this] { openReleasePage(); });
+    connect(m_secondary, &QPushButton::clicked, this, [this] { openAuthorHome(); });
 
     auto *buttons = new QHBoxLayout;
     buttons->setSpacing(8);
@@ -108,10 +114,16 @@ UpdateDialog::UpdateDialog(QWidget *parent) : QDialog(parent)
     buttons->addWidget(m_close);
     buttons->addWidget(m_primary);
 
+    auto *header = new QHBoxLayout;
+    header->setContentsMargins(0, 0, 0, 0);
+    header->setSpacing(10);
+    header->addWidget(mark, 0, Qt::AlignTop);
+    header->addWidget(m_headline, 1);
+
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(20, 18, 20, 16);
-    layout->setSpacing(10);
-    layout->addWidget(m_headline);
+    layout->setContentsMargins(22, 20, 22, 18);
+    layout->setSpacing(12);
+    layout->addLayout(header);
     layout->addWidget(m_detail);
     layout->addWidget(m_notes, 1);
     layout->addWidget(m_progress);
@@ -170,7 +182,7 @@ void UpdateDialog::applyState(State state)
     switch (state) {
     case State::Checking:
         m_headline->setText(QStringLiteral("正在检查更新…"));
-        // 「正在向 GitHub 查询最新版本」那句说明是废话，不写。清空之外还得藏起来，
+        // 「正在向更新服务查询最新版本」那句说明是废话，不写。清空之外还得藏起来，
         // 否则从「没能完成」重试回来时，上一档那句错误说明会挂在下面。
         m_detail->clear();
         m_detail->hide();
@@ -189,13 +201,12 @@ void UpdateDialog::applyState(State state)
             QStringLiteral("你正在用的是 %1。").arg(displayVersion(m_result.current));
 
         if (!m_asset) {
-            // 版本是新的，但没有能自动安装的附件 —— 老实说清楚，只给「打开下载页」。
+            // 版本是新的，但没有能自动安装的附件 —— 老实说清楚，只给作者主页入口。
             // 注意别写成「没有 .zip 或 .exe」：安装程序也是 .exe，但它是被
             // pickUpdateAsset() 特意跳过的（拿它替换主程序会让用户双击弹出安装界面），
             // 所以「有 .exe」和「能自动装」不是一回事。
-            detail += QStringLiteral("\n这个 Release 里没有能自动安装的附件 ——"
-                                     "需要挂一个便携 zip，或者一个不是安装程序的 .exe。"
-                                     "请点「打开下载页」手动获取。");
+            detail += QStringLiteral("\n这个版本暂时没法自动安装，"
+                                     "请稍后再试，或访问作者主页获取最新版本。");
         } else if (!m_result.release.publishedAt.isNull()) {
             detail += QStringLiteral("\n发布于 %1。")
                           .arg(m_result.release.publishedAt.toLocalTime()
@@ -205,6 +216,10 @@ void UpdateDialog::applyState(State state)
 
         if (!m_result.release.notes.trimmed().isEmpty()) {
             m_notes->setMarkdown(m_result.release.notes);
+
+            // QTextBrowser 的 sizeHint 很高，只有几行说明时会空出一大块。
+            // 固定成一个紧凑的高度，内容多了它自己出滚动条。
+            m_notes->setFixedHeight(170);
             m_notes->show();
         }
 
@@ -212,8 +227,8 @@ void UpdateDialog::applyState(State state)
             m_primary->setText(QStringLiteral("下载并更新"));
             m_primary->show();
         }
-        if (!m_result.release.pageUrl.isEmpty()) {
-            m_secondary->setText(QStringLiteral("打开下载页"));
+        if (!m_asset) {
+            m_secondary->setText(QStringLiteral("访问作者主页"));
             m_secondary->show();
         }
         break;
@@ -288,14 +303,12 @@ void UpdateDialog::startDownload()
         m_detail->setText(
             QStringLiteral("EmShell 所在的目录写不进去，没法自动更新：\n%1\n\n"
                            "装到 Program Files 之类需要管理员权限的地方就会这样。"
-                           "用「打开下载页」手动换吧。")
+                           "可以访问作者主页手动获取新版本。")
                 .arg(QDir::toNativeSeparators(
                     QFileInfo(QCoreApplication::applicationFilePath()).absolutePath())));
         m_primary->hide();
-        if (!m_result.release.pageUrl.isEmpty()) {
-            m_secondary->setText(QStringLiteral("打开下载页"));
-            m_secondary->show();
-        }
+        m_secondary->setText(QStringLiteral("访问作者主页"));
+        m_secondary->show();
         return;
     }
 
@@ -328,6 +341,8 @@ void UpdateDialog::onDownloadFinished(const QString &path)
         m_retry = Retry::Download;
         applyState(State::Failed);
         m_detail->setText(QStringLiteral("准备好的文件有问题，没有替换上去：\n%1").arg(error));
+        m_secondary->setText(QStringLiteral("访问作者主页"));
+        m_secondary->show();
         return;
     }
 
@@ -335,6 +350,8 @@ void UpdateDialog::onDownloadFinished(const QString &path)
         m_retry = Retry::Download;
         applyState(State::Failed);
         m_detail->setText(QStringLiteral("启动更新脚本失败，程序保持原样：\n%1").arg(error));
+        m_secondary->setText(QStringLiteral("访问作者主页"));
+        m_secondary->show();
         return;
     }
 
@@ -366,10 +383,10 @@ void UpdateDialog::onDownloadFailed(const QString &error)
     m_detail->setText(error);
 }
 
-void UpdateDialog::openReleasePage()
+void UpdateDialog::openAuthorHome()
 {
-    if (!m_result.release.pageUrl.isEmpty())
-        QDesktopServices::openUrl(QUrl(m_result.release.pageUrl));
+    // 不打开 Release 页面：那会把更新源直接暴露在浏览器地址栏里。
+    QDesktopServices::openUrl(QUrl(QStringLiteral("https://www.boshou.me")));
 }
 
 } // namespace Em

@@ -50,7 +50,7 @@ private:
     void startDownload();
     void onDownloadFinished(const QString &path);
     void onDownloadFailed(const QString &error);
-    void openReleasePage();
+    void openAuthorHome();
 
     UpdateChecker *m_checker = nullptr;
 

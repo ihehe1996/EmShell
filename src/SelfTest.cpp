@@ -14,6 +14,7 @@
 #include "ui/SettingsPage.h"
 #include "ui/TerminalPage.h"
 #include "ui/UpdateDialog.h"
+#include "ui/UpdatePage.h"
 #include "ui/Widgets.h"
 #include "update/ReleaseInfo.h"
 #include "update/UpdateChecker.h"
@@ -911,6 +912,42 @@ int runConnectionDialogShot()
 }
 
 // ---------------------------------------------------------------------------
+// 软件更新页截图。这一页没有交互分支，截一张就够。
+//   --updatepageui
+// ---------------------------------------------------------------------------
+int runUpdatePageShot()
+{
+    QFile::remove(QStringLiteral("selftest.log"));
+    log(QStringLiteral("== 软件更新页截图 =="));
+
+    ConnectionStore store;
+    store.load();
+    KeyStore keys;
+    keys.load();
+
+    MainWindow window(&store, &keys);
+    window.resize(1380, 880);
+    window.show();
+
+    if (auto *page = window.findChild<UpdatePage *>()) {
+        if (auto *stack = window.findChild<QStackedWidget *>())
+            stack->setCurrentWidget(page);
+    }
+
+    QTimer::singleShot(800, &window, [&window] {
+        if (window.grab().save(QStringLiteral("updatepageui.png")))
+            log(QStringLiteral("  已保存 updatepageui.png"));
+        qApp->quit();
+    });
+
+    QTimer::singleShot(6000, [] { qApp->quit(); });
+    qApp->exec();
+
+    flushLog();
+    return g_fail == 0 ? 0 : 1;
+}
+
+// ---------------------------------------------------------------------------
 // 设置页截图：基本设置 / 外观设置各一张，顺带验证「选项卡能切」。
 //
 // 背景图用一张现造的测试图，并通过 EMSHELL_BACKGROUND_IMAGE 临时覆盖 ——
@@ -1110,7 +1147,7 @@ int runUpdateCheck()
 {
     QFile::remove(QStringLiteral("selftest.log"));
     log(QStringLiteral("== 联网检查更新 =="));
-    log(QStringLiteral("  更新源：%1").arg(updateRepo()));
+    log(QStringLiteral("  更新服务：已配置"));
 
     UpdateChecker checker;
     bool finished = false;
@@ -1314,10 +1351,10 @@ int runUpdateTest()
             const QString noRelease = noReleaseYetMessage(repo);
 
             check(!missing.isEmpty() && !noRelease.isEmpty() && missing != noRelease
-                      && missing.contains(repo) && noRelease.contains(repo)
-                      && missing.contains(QStringLiteral("updateRepo"))
-                      && noRelease.contains(QStringLiteral("Release")),
-                  QStringLiteral("更新：404 的两种情况给出不同的提示"));
+                      && !missing.contains(repo) && !noRelease.contains(repo)
+                      && !missing.contains(QStringLiteral("updateRepo"))
+                      && !noRelease.contains(QStringLiteral("GitHub")),
+                  QStringLiteral("更新：404 的两种情况给出不同的提示，且不暴露更新源"));
         }
     }
 
@@ -1452,6 +1489,7 @@ bool isSelfTestRequest(const QStringList &arguments)
            || arguments.contains(QStringLiteral("--updateui"))
            || arguments.contains(QStringLiteral("--dialogui"))
            || arguments.contains(QStringLiteral("--settingsui"))
+           || arguments.contains(QStringLiteral("--updatepageui"))
            || arguments.contains(QStringLiteral("--probeui"))
            || arguments.contains(QStringLiteral("--termui"))
            || arguments.contains(QStringLiteral("--updatecheck"))
@@ -1471,6 +1509,8 @@ int runSelfTest(const QStringList &arguments)
         return runProbeShot();
     if (arguments.contains(QStringLiteral("--settingsui")))
         return runSettingsShot();
+    if (arguments.contains(QStringLiteral("--updatepageui")))
+        return runUpdatePageShot();
     if (arguments.contains(QStringLiteral("--dialogui")))
         return runConnectionDialogShot();
     if (arguments.contains(QStringLiteral("--updateui")))

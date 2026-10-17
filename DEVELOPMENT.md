@@ -88,6 +88,7 @@ cd build/debug
 ./EmShell.exe --updatetest        # 更新：版本比较 / release 解析 / 铺暂存目录
 ./EmShell.exe --updatecheck       # 更新：真联网问一次 GitHub
 ./EmShell.exe --updateui          # 更新对话框截图
+./EmShell.exe --updatepageui      # 软件更新页截图
 ./EmShell.exe --dialogui          # 新建连接对话框截图
 ./EmShell.exe --settingsui        # 设置页截图
 ./EmShell.exe --probeui           # 连通性检测截图

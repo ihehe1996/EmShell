@@ -11,6 +11,7 @@
 #include "update/UpdateInstaller.h"
 
 #include <QApplication>
+#include <QIcon>
 #include <QTimer>
 
 int main(int argc, char *argv[])
@@ -21,6 +22,9 @@ int main(int argc, char *argv[])
     // 版本号来自 CMakeLists.txt 的 project(VERSION)，见 app/AppConfig.h。
     // 更新器拿它和 GitHub release 的 tag 比，别在这里写死。
     app.setApplicationVersion(Em::appVersion());
+    // 应用级图标：对话框、任务栏等默认都会从这里取。主窗口另外设了一份，
+    // 但 QDialog 不会继承父窗口的图标，只会找 QApplication 的。
+    app.setWindowIcon(QIcon(QStringLiteral(":/icons/app-logo.png")));
 
     // 关闭窗口不等于退出：主窗口会藏到系统托盘，从托盘菜单退出。
     // 没有托盘的环境里 closeEvent 会自己调 quit()，不会留下无窗口的进程。

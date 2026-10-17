@@ -40,36 +40,33 @@ QNetworkRequest makeRequest(const QUrl &url)
 // 404 不走这里 —— 它有两种含义，要先再问一次仓库在不在，见 resolveNotFound()。
 QString describeHttpError(int status, const QString &reason)
 {
+    Q_UNUSED(reason);
     switch (status) {
     case 0:
-        return QStringLiteral("连不上 GitHub");
+        return QStringLiteral("连不上更新服务");
     case 403:
-        // GitHub 对未认证的 API 调用是每分钟 60 次
-        return QStringLiteral("GitHub 拒绝了这次请求（403），多半是短时间内查得太频，等几分钟再试");
+        // 更新服务的接口对未认证调用有频率限制
+        return QStringLiteral("更新服务暂时不可用，请过几分钟再试");
     default:
-        return QStringLiteral("GitHub 返回 HTTP %1 %2").arg(status).arg(reason);
+        return QStringLiteral("更新服务返回错误（HTTP %1）").arg(status);
     }
 }
 
 } // namespace
 
+// 这两条是给用户看的，**不要写仓库名、接口地址或者配置文件路径** ——
+// 更新走哪儿是内部实现，用户只需要知道「现在能不能更新」。
 QString repoNotFoundMessage(const QString &repo)
 {
-    return QStringLiteral("找不到仓库 %1。\n\n"
-                          "可能是这两种情况：\n"
-                          "  · src/app/AppConfig.h 里 updateRepo() 填错了。它要的是"
-                          "「用户名/仓库名」，\n"
-                          "    不是 git 远程地址（git@github.com:用户名/仓库名.git 那种）\n"
-                          "  · 这个仓库是私有的 —— 不带凭据访问不到，也会回 404")
-        .arg(repo);
+    Q_UNUSED(repo);
+    return QStringLiteral("暂时获取不到更新信息。\n\n"
+                          "请检查网络后稍后再试，或者访问作者主页获取最新版本。");
 }
 
 QString noReleaseYetMessage(const QString &repo)
 {
-    return QStringLiteral("仓库 %1 能找到，但它还没有发布过 Release。\n\n"
-                          "在 GitHub 上发一个就有了：Releases → Create a new release，\n"
-                          "tag 填版本号（比如 v1.0.1），再把安装包或 zip 挂成附件。")
-        .arg(repo);
+    Q_UNUSED(repo);
+    return QStringLiteral("更新服务里还没有可用的版本，请稍后再试。");
 }
 
 UpdateChecker::UpdateChecker(QObject *parent) : QObject(parent) {}
@@ -102,8 +99,7 @@ void UpdateChecker::check()
     const QString repo = updateRepo();
     if (repo.isEmpty() || !repo.contains(QLatin1Char('/'))) {
         Result result;
-        result.error = QStringLiteral("还没有配置更新源。填好 src/app/AppConfig.h 里的 updateRepo() "
-                                      "（形如 用户名/仓库名）之后才能检查更新。");
+        result.error = QStringLiteral("更新服务暂时不可用，请稍后再试。");
         emit checkFinished(result);
         return;
     }
@@ -135,8 +131,9 @@ void UpdateChecker::onCheckReplyFinished()
     // 网络层直接失败（DNS、TLS、超时）。HttpStatusCode 拿不到才走这里 ——
     // 服务端返回了 4xx/5xx 的报文时 status 是有值的，那种走下面的分支。
     if (reply->error() != QNetworkReply::NoError && status == 0) {
-        result.error = QStringLiteral("%1（%2）").arg(describeHttpError(0, QString()),
-                                                      reply->errorString());
+        // errorString() 里可能带主机名或接口路径，不能直接摊给用户看
+        result.error = QStringLiteral("%1，请检查网络后重试。")
+                           .arg(describeHttpError(0, QString()));
         emit checkFinished(result);
         return;
     }
@@ -159,7 +156,7 @@ void UpdateChecker::onCheckReplyFinished()
     ReleaseInfo info;
     QString parseError;
     if (!parseGitHubRelease(reply->readAll(), &info, &parseError)) {
-        result.error = QStringLiteral("解析 GitHub 的响应失败：%1").arg(parseError);
+        result.error = QStringLiteral("更新信息格式不正确，请稍后再试。");
         emit checkFinished(result);
         return;
     }
@@ -175,7 +172,7 @@ void UpdateChecker::onCheckReplyFinished()
 
     Version latest;
     if (!parseVersion(info.tagName, &latest)) {
-        result.error = QStringLiteral("Release 的 tag「%1」不是合法版本号").arg(info.tagName);
+        result.error = QStringLiteral("新版本的版本号「%1」不合法，没法比较").arg(info.tagName);
         emit checkFinished(result);
         return;
     }
@@ -215,8 +212,8 @@ void UpdateChecker::resolveNotFound(const Result &result)
         } else if (status == 404) {
             resolved.error = repoNotFoundMessage(repo);
         } else if (error != QNetworkReply::NoError && status == 0) {
-            // 第一次问到了 404 说明网络本来是通的，这次却挂了 —— 如实说
-            resolved.error = QStringLiteral("问不到 %1 的状态：%2").arg(repo, reply->errorString());
+            // 第一次问到了 404 说明网络本来是通的，这次却挂了。不要说具体地址。
+            resolved.error = QStringLiteral("连接更新服务失败，请检查网络后重试。");
         } else {
             resolved.error = describeHttpError(status, QString());
         }
@@ -301,7 +298,7 @@ void UpdateChecker::onDownloadReplyFinished()
 
     if (error != QNetworkReply::NoError && status == 0) {
         QFile::remove(destPath);
-        emit downloadFailed(QStringLiteral("下载中断：%1").arg(reply->errorString()));
+        emit downloadFailed(QStringLiteral("下载中断，请检查网络后重试。"));
         return;
     }
     if (status != 200 && status != 0) {
@@ -323,8 +320,8 @@ void UpdateChecker::onDownloadReplyFinished()
     if (!asset.sha256.isEmpty() && actualHash.compare(asset.sha256, Qt::CaseInsensitive) != 0) {
         QFile::remove(destPath);
         emit downloadFailed(QStringLiteral("下载的文件校验不过（sha256 对不上），已丢弃。\n"
-                                           "可能是网络出了问题，也可能是这个 Release 的附件"
-                                           "和它登记的摘要不一致。"));
+                                           "可能是网络出了问题，也可能是更新包的摘要"
+                                           "和附件不一致。"));
         return;
     }
 
