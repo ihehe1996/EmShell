@@ -44,6 +44,10 @@ public:
     // percent < 0 表示没有背景图，恢复主题里的实色。
     void setGlassOpacity(int percent);
 
+    // 「软件更新」右边显示发现的新版本号（红色徽标）。传空串表示隐藏。
+    // MainWindow 在静默检查或手动检查拿到结果后调它。
+    void setUpdateAvailable(const QString &version);
+
 signals:
     void pageRequested(AppPage page);
 

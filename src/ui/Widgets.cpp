@@ -586,6 +586,24 @@ void NavButton::setCount(int count, bool hideWhenZero)
     m_countLabel->show();
 }
 
+void NavButton::setUpdateBadge(const QString &text)
+{
+    if (!m_countLabel)
+        return;
+
+    if (text.isEmpty()) {
+        m_countLabel->setProperty("badge", QVariant());
+        repolish(m_countLabel);
+        m_countLabel->hide();
+        return;
+    }
+
+    m_countLabel->setText(text);
+    m_countLabel->setProperty("badge", QStringLiteral("update"));
+    repolish(m_countLabel);
+    m_countLabel->show();
+}
+
 void NavButton::setActive(bool active)
 {
     if (m_active == active)

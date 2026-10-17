@@ -214,6 +214,9 @@ public:
 
     // hideWhenZero=false 时 0 也显示（分组项要占住那一列，不然数字会跳）
     void setCount(int count, bool hideWhenZero = true);
+    // 「软件更新」那一项右边的红色版本徽标。传空串表示隐藏。
+    // 和数量药丸复用同一个 QLabel，但走单独的 badge 属性，颜色不受 active/hover 影响。
+    void setUpdateBadge(const QString &text);
     void setActive(bool active);
     bool isActive() const { return m_active; }
     void setDotColor(const QColor &color);

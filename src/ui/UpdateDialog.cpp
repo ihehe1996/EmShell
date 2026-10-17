@@ -267,6 +267,7 @@ void UpdateDialog::showResult(const UpdateChecker::Result &result)
     m_result = result;
     m_asset = pickUpdateAsset(result.release);
     applyState(State::Available);
+    emit checkCompleted(result.updateAvailable, result.latest);
 }
 
 void UpdateDialog::onCheckFinished(const UpdateChecker::Result &result)
@@ -283,11 +284,13 @@ void UpdateDialog::onCheckFinished(const UpdateChecker::Result &result)
 
     if (!result.updateAvailable) {
         applyState(State::UpToDate);
+        emit checkCompleted(false, result.latest);
         return;
     }
 
     m_asset = pickUpdateAsset(result.release);
     applyState(State::Available);
+    emit checkCompleted(true, result.latest);
 }
 
 void UpdateDialog::startDownload()

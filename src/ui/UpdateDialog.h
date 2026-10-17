@@ -36,6 +36,11 @@ public:
     // 只在结果确实有新版本时调用，别的状态（已是最新/查失败）不该无端弹窗。
     void showResult(const UpdateChecker::Result &result);
 
+signals:
+    // 查询成功时发出。有新版本时 updateAvailable 为 true、latest 是最新版本号；
+    // 已是最新时 latest 是当前版本。查失败不发，调用方保留上次的徽标状态。
+    void checkCompleted(bool updateAvailable, const Version &latest);
+
 protected:
     void reject() override;   // 下载中途关窗口要中止请求
 

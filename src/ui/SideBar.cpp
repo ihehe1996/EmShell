@@ -219,6 +219,14 @@ SideBar::SideBar(ConnectionStore *store, QWidget *parent)
     rebuildGroups();
 }
 
+void SideBar::setUpdateAvailable(const QString &version)
+{
+    if (NavButton *button = m_buttons.value(int(AppPage::Updates))) {
+        button->setUpdateBadge(version.isEmpty() ? QString()
+                                                 : QStringLiteral("v") + version);
+    }
+}
+
 void SideBar::setGlassOpacity(int percent)
 {
     if (!m_cta)

@@ -430,6 +430,14 @@ void MainWindow::reloadBackground()
 void MainWindow::checkForUpdates()
 {
     UpdateDialog dialog(this);
+
+    // 查完把结果同步到侧栏：有新版本就挂红色版本徽标，已经是最新就摘掉。
+    // 查询失败不发这个信号，上一次的徽标保持不变。
+    connect(&dialog, &UpdateDialog::checkCompleted, this,
+            [this](bool available, const Version &latest) {
+                m_sideBar->setUpdateAvailable(available ? latest.toString() : QString());
+            });
+
     dialog.startCheck();
     dialog.exec();
 }
@@ -447,9 +455,14 @@ void MainWindow::startSilentUpdateCheck()
                 [this](const UpdateChecker::Result &result) {
                     // 只有真查到新版本才弹窗：查失败、已是最新都不该无端拦人。
                     //
-                    // 这里不用别的方式提醒（比如状态条）：那条一闪就过去了，
-                    // 用户很容易错过；对话框是自己画的，一定会出现。
-                    if (!result.ok || !result.updateAvailable)
+                    // 侧栏的红色版本徽标是常驻提示：对话框关掉之后，
+                    // 用户还能看到「有新版本」这件事。
+                    if (!result.ok)
+                        return;
+                    m_sideBar->setUpdateAvailable(result.updateAvailable
+                                                      ? result.latest.toString()
+                                                      : QString());
+                    if (!result.updateAvailable)
                         return;
                     UpdateDialog dialog(this);
                     dialog.showResult(result);   // 结果现成的，别再查一遍

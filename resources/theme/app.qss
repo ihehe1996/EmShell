@@ -164,6 +164,13 @@ QLabel[role="navText"][state="active"] { color: @nav-text-active; }
 }
 #NavCount[state="hover"]  { background: @nav-highlight-bg; color: @nav-text-hover; }
 #NavCount[state="active"] { background: transparent; color: @nav-text-active; }
+/* 「软件更新」发现新版本：红色版本徽标。放在上面两条之后，
+   保证 active / hover 时也保持红底白字，不被导航态的颜色盖掉。 */
+#NavCount[badge="update"] {
+    background: @err;
+    color: @nav-cta-text;
+    font-weight: 600;
+}
 
 /* 分组标题：和条目的图标对齐（外层 10 + 这里的 11），不缩进的话会
    比图标还靠左，看着像没对齐。 */
