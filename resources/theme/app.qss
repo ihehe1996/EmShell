@@ -1,0 +1,863 @@
+/* ===========================================================================
+   EmShell 样式表
+
+   @xxx 是占位符，加载时由 Em::Theme::buildStyleSheet() 替换成真实色值。
+   改配色请改 src/app/Theme.cpp 里的 lightTable() / darkTable()，
+   不要在这里写死色值 —— 这个文件同时服务浅色和深色两套主题。
+
+   注意：Qt 的 QSS 类选择器匹配不到自定义类（`Card {}` 和 `Em::Card {}`
+   都试过，不行），所以下面一律用属性选择器 `QFrame[role="card"]`。
+   这些属性在 src/ui/Widgets.cpp 的构造函数里设置。
+   =========================================================================== */
+
+/* ---------------------------------------------------------------- 基础 --- */
+
+QWidget {
+    color: @text;
+    background: transparent;
+}
+
+/* Root 自己不画底：MainWindow 里的 BackgroundHost 会先铺 @bg-app、再画背景图。
+   这里再填一层实色会把图画盖掉。 */
+#Root {
+    background: transparent;
+}
+
+/* 无边框模式那圈 1px 描边**在代码里画**（MainWindow.cpp 的 BackgroundHost）：
+   QSS 的 border 是 paintEvent 之前画的，Root 又要铺满背景图，画在这儿会被盖掉。
+   root 上仍然挂着 frameless 属性，代码靠它决定要不要描边。 */
+
+/* 原生标题栏下面的「延伸条」。
+   系统标题栏的高度是 Windows 定死的（SM_CYCAPTION），DWM 只让改颜色、不让改高度。
+   所以在它下面垫一条同色窄条，视觉上把标题栏拉高一点，底部再压一条分隔线。
+   自绘标题栏（TitleBar）不走这条，它自己就带 border-bottom。 */
+#CaptionStrip {
+    background: @titlebar-bg;
+    border: none;
+    border-bottom: 1px solid @titlebar-line;
+}
+
+/* 提示气泡。
+   注意 padding 在这里是**被算两遍**的：QTipLabel 把它既当 contentsMargins，
+   又当 QLabel 的 margin（走样式的 PM_ToolTipLabelFrameWidth）。照常规写
+   「6px 10px」的话，俩字的气泡会撑成 72x54 —— 白白胖胖一大块。
+   所以左右只给 2px，实际效果约等于四周 8px/5px 的留白。
+   另外竖向留白还会跟着**横向**的 padding 走（那个 margin 四个方向是同一个值），
+   改的时候看气泡实际大小，别只看这个数。 */
+QToolTip {
+    background: @bg-elevated;
+    color: @text;
+    border: 1px solid @border-strong;
+    border-radius: 6px;
+    padding: 0px 2px;
+    font-size: 12px;
+}
+
+/* ------------------------------------------------------------ 标题栏 --- */
+
+/* 页头：普通的一行 —— 小图标 + 应用名 + 标准窗口按钮。
+   刻意不加渐变、不加副标题、不加装饰色。页头是天天要看的地方，越素越耐看。 */
+#TitleBar {
+    background: @titlebar-bg;
+    border-bottom: 1px solid @titlebar-line;
+}
+
+/* 字体（等宽）和字号在 TitleBar.cpp 里设，这里只管颜色 */
+#BrandName {
+    color: @text;
+}
+
+/* 窗口按钮：标准样式。平时没有背景，悬停浮出一个浅灰圆角块 */
+QPushButton[role="winbtn"] {
+    background: transparent;
+    border: none;
+    border-radius: 5px;
+}
+QPushButton[role="winbtn"]:hover   { background: @win-hover; }
+QPushButton[role="winbtn"]:pressed { background: @win-hover; }
+QPushButton[role="winbtn"][kind="close"]:hover   { background: @win-close-hover; }
+QPushButton[role="winbtn"][kind="close"]:pressed { background: @win-close-hover; }
+
+/* -------------------------------------------------------------- 侧边栏 --- */
+
+/* 侧栏是**深色轨道**，和浅色内容区形成强对比。
+   它整条链路都用 nav-* 那套 token —— 全局的 text-dim / text-mute 是给白底
+   准备的深色字，放这儿就是黑底黑字。 */
+#SideBar {
+    background: @nav-bg;
+    border-right: 1px solid @nav-line;
+}
+/* 设了背景图时整条侧栏也透出一点图（MainWindow 会给它挂 glass=true）。
+   用半透明而不是全透明：侧栏上的文字是浅灰，直接压在照片上会读不清。
+   属性一变由 MainWindow::reloadBackground() 调 repolish()。 */
+#SideBar[glass="true"] {
+    background: @nav-bg-glass;
+}
+
+#SideBarScroll { background: transparent; border: none; }
+
+/* 侧栏自己那根滚动条也要跟着深色轨道走。不改的话，深底上会拖一条浅灰的条 —— 
+   全局那套 QScrollBar 的 handle 用的是 @border-strong，是给浅色底准备的。 */
+#SideBar QScrollBar::handle:vertical              { background: @nav-hover-bg; }
+#SideBar QScrollBar::handle:vertical:hover        { background: @nav-group; }
+
+/* 侧栏顶上那个「+ 新建连接」。整条侧栏唯一的实心色块，用来一眼找到「加一条连接」
+   这件事。图标和文字都是白的，图标颜色在构造时烘进 pixmap（QSS 管不到 pixmap）。 */
+#SideBarCta {
+    background: @nav-cta-bg;
+    border: none;
+    border-radius: 9px;
+    padding: 0px;
+    min-height: 36px;
+}
+#SideBarCta:hover   { background: @nav-cta-bg-hover; }
+#SideBarCta:pressed { background: @nav-cta-bg-hover; }
+QLabel[role="ctaText"] { font-size: 12px; color: @nav-cta-text; }
+
+/* 导航项。整行就是一个圆角块，里面的留白由 NavButton 自己的布局控制，
+   所以这里的 padding 必须归零 —— 不然两种留白叠在一起，图标会飘。 */
+QPushButton[role="nav"] {
+    background: transparent;
+    border: none;
+    border-radius: 9px;
+    padding: 0px;
+    min-height: 38px;
+}
+/* 悬浮 / 按住共用一个底色（灰蓝），靠文字颜色区分。
+   **不要用 :hover / :pressed 这两个伪状态**：靠 QSS 伪状态切背景时，Qt 只重画
+   按钮本身，子控件（文字 QLabel）占的那一块会留着上一帧的底色 —— 表现为
+   悬浮/右键那一行里，文字背后是一个和行底色不一样的方框，特别显眼
+   （右键菜单打开时最明显）。改成由 NavButton 自己挂 hover 属性 + repolish，
+   和 active 走同一条路，子控件会跟着一起重画。 */
+QPushButton[role="nav"][hover="true"] { background: @nav-highlight-bg; }
+
+/* 当前页：底色是**单独一个 token**（强调蓝 12% 透明），和悬浮/按住的灰蓝分开 ——
+   要的是「当前页泛一层蓝雾」，不是「当前页比悬浮更深」。
+   这条必须写在 hover 后面：鼠标停在当前页上时两条都匹配，靠后者胜出，
+   不然后者被 hover 那条盖掉、当前页会突然变灰。
+   不能加 border：QSS 的 border 会占掉盒子尺寸，当前页会比邻居高 2px。 */
+QPushButton[role="nav"][active="true"] { background: @nav-active-bg; }
+
+/* 文字颜色得单独写。全局那条 QWidget { color: @text } 会盖到 QLabel 上，
+   不显式覆盖的话每个条目的标题都是最深的黑，整列看着很重。
+
+   state 属性由 NavButton::refreshState() 设置。**别改成祖先选择器**
+   （`QPushButton[role="nav"][active="true"] QLabel[role="navText"]`）——
+   按钮的属性变了之后 Qt 不会重新解析子控件的样式，表现是切页后旧的那一项
+   文字还是蓝的。规则只依赖控件自己的属性才安全。 */
+/* 当前页只靠颜色区分，不加粗 —— 中文一加粗，字形会明显变糊变挤 */
+QLabel[role="navText"]                 { font-size: 12px; color: @nav-text; }
+QLabel[role="navText"][state="hover"]  { color: @nav-text-hover; }
+QLabel[role="navText"][state="active"] { color: @nav-text-active; }
+
+/* 右侧的数量。做成一个小药丸：光秃秃一个数字飘在右边，既不像计数，
+   宽窄还会随位数跳。有底色之后就稳稳地待在同一个位置上。 */
+#NavCount {
+    background: @nav-count-bg;
+    color: @nav-count-text;
+    font-size: 11px;
+    border-radius: 8px;
+    padding: 0px 6px;
+    min-width: 14px;
+    min-height: 17px;
+    max-height: 17px;
+}
+#NavCount[state="hover"]  { background: @nav-highlight-bg; color: @nav-text-hover; }
+#NavCount[state="active"] { background: transparent; color: @nav-text-active; }
+
+/* 分组标题：和条目的图标对齐（外层 10 + 这里的 11），不缩进的话会
+   比图标还靠左，看着像没对齐。 */
+#NavGroupLabel {
+    color: @nav-group;
+    font-size: 11px;
+    font-weight: 600;
+    padding-left: 11px;
+}
+
+/* 「分组」标题行最右边的「+」。图标颜色烘在 QIcon 里（QSS 管不到 pixmap），
+   这里只管背景。
+   **不写 min-height**：那条会跟代码里的 setFixedSize(20,20) 打架，把高度
+   撑到三十几，方形按钮变成长方形（QSS 的 min-height 会清掉最大高度）。
+   hover 必须用 nav-* 那套：这是深色轨道，白底那套 bg-hover 在这儿会读反。 */
+#NavGroupAdd {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 0px;
+}
+#NavGroupAdd:hover   { background: @nav-highlight-bg; }
+#NavGroupAdd:pressed { background: @nav-highlight-bg; }
+
+/* 分组区块空着时那行提示。用 nav-group（和标题同色）就够淡了，
+   千万别用全局的 text-mute —— 那是给白底准备的深灰，在深轨道上看不见。 */
+QLabel[role="navSectionEmpty"] {
+    color: @nav-group;
+    font-size: 11px;
+    padding-left: 11px;
+}
+
+/* ---------------------------------------------------------------- 卡片 --- */
+
+QFrame[role="card"] {
+    background: @bg-panel;
+    border: 1px solid @border;
+    border-radius: 12px;
+}
+
+QFrame[role="card"][flat="true"] {
+    background: transparent;
+    border: none;
+}
+
+/* 首页那四个快捷入口 */
+QFrame[role="tile"] {
+    background: @bg-panel;
+    border: 1px solid @border;
+    border-radius: 12px;
+}
+QFrame[role="tile"]:hover {
+    background: @bg-panel;
+    border-color: @accent-line;
+}
+
+#TileIcon {
+    background: @accent-soft;
+    border-radius: 10px;
+}
+
+QLabel[role="tileTitle"] {
+    font-size: 14px;
+    font-weight: 600;
+    color: @text;
+}
+QLabel[role="tileDesc"] {
+    font-size: 12px;
+    color: @text-mute;
+}
+
+/* ------------------------------------------------------------ 连接条目 --- */
+
+/* 连接表：一行就是表格的一行，只有一条底边线，没有圆角卡片。
+   列宽由 Widgets.cpp 里那组 kCol* 常量和行内的 stretch 决定。 */
+QFrame[role="row"] {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid @border;
+    border-radius: 0;
+}
+QFrame[role="row"]:hover { background: @bg-hover; }
+QFrame[role="row"][active="true"] { background: @accent-soft; }
+
+/* 表头。固定不滚，底边线和每一行对齐 */
+#ListHeader {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid @border;
+}
+QLabel[role="columnHeader"] {
+    font-size: 11px;
+    font-weight: 500;
+    color: @text-mute;
+}
+
+QLabel[role="rowTitle"] {
+    font-size: 13px;
+    font-weight: 500;
+    color: @text;
+}
+QLabel[role="rowHost"], QLabel[role="rowPort"] {
+    font-size: 12px;
+    color: @text-dim;
+}
+QLabel[role="rowUser"] {
+    font-size: 12.5px;
+    color: @text-dim;
+}
+QLabel[role="rowStatus"] {
+    font-size: 12px;
+    color: @text-mute;
+}
+QLabel[role="rowStatus"][online="true"] { color: @ok; }
+/* 「最近使用」的成功 / 失败 */
+QLabel[role="historyStatus"] {
+    font-size: 12px;
+    color: @text-mute;
+}
+QLabel[role="historyStatus"][state="ok"]   { color: @ok; }
+QLabel[role="historyStatus"][state="fail"] { color: @err; }
+QLabel[role="rowLatency"] {
+    font-size: 12px;
+    color: @text-mute;
+}
+QLabel[role="rowLatency"][level="good"] { color: @ok; }
+QLabel[role="rowLatency"][level="mid"]  { color: @warn; }
+QLabel[role="rowLatency"][level="poor"] { color: @err; }
+QLabel[role="rowLast"] {
+    font-size: 12px;
+    color: @text-mute;
+}
+QLabel[role="rowMeta"] {
+    font-size: 12px;
+    color: @text-mute;
+}
+
+/* 分组标题那一行 */
+QFrame[role="groupHeader"] {
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+}
+QFrame[role="groupHeader"]:hover { background: @bg-hover; }
+
+QLabel[role="groupName"] {
+    font-size: 13px;
+    font-weight: 600;
+    color: @text-dim;
+}
+QLabel[role="groupCount"] {
+    font-size: 12px;
+    color: @text-mute;
+}
+
+/* ---------------------------------------------------------------- 按钮 --- */
+
+QPushButton[role="pill"] {
+    border-radius: 8px;
+    padding: 0px 16px;
+    min-height: 32px;
+    font-size: 13px;
+    font-weight: 500;
+    border: 1px solid transparent;
+}
+/* 只有一个图标的方形按钮。四个尺寸**必须显式写死**：
+   上面那条 min-height: 32px 对紧凑按钮同样生效，再叠上 1px 边框就成了 30x34
+   —— 竖着被拉长，不是正方形。
+   更坑的是：QSS 设的最小高度一旦比代码里 setFixedSize() 的最大高度还大，
+   Qt 会把最大高度整个清掉，于是 setFixedSize(30, 30) 静默失效，只剩宽度还是 30。
+   所以这里把 min/max 都定成 30，和代码里那个值保持一致。 */
+QPushButton[role="pill"][compact="true"] {
+    padding: 0px;
+    min-width: 30px;
+    max-width: 30px;
+    min-height: 30px;
+    max-height: 30px;
+}
+
+QPushButton[role="pill"][variant="primary"] {
+    background: @accent;
+    color: #FFFFFF;
+}
+QPushButton[role="pill"][variant="primary"]:hover   { background: @accent-hover; }
+QPushButton[role="pill"][variant="primary"]:pressed { background: @accent-press; }
+
+QPushButton[role="pill"][variant="ghost"] {
+    background: transparent;
+    color: @text-dim;
+    border: 1px solid @border-strong;
+}
+QPushButton[role="pill"][variant="ghost"]:hover {
+    background: @bg-hover;
+    color: @text;
+    border-color: @text-mute;
+}
+QPushButton[role="pill"][variant="ghost"]:pressed { background: @bg-active; }
+
+QPushButton[role="pill"][variant="subtle"] {
+    background: @bg-hover;
+    color: @text-dim;
+}
+QPushButton[role="pill"][variant="subtle"]:hover   { background: @bg-active; color: @text; }
+QPushButton[role="pill"][variant="subtle"]:pressed { background: @bg-active; }
+
+QPushButton[role="pill"][variant="danger"] {
+    background: transparent;
+    color: @err;
+    border: 1px solid @border-strong;
+}
+QPushButton[role="pill"][variant="danger"]:hover {
+    background: @err-soft;
+    border-color: @err;
+}
+QPushButton[role="pill"][variant="danger"]:pressed { background: @err-soft; }
+
+QPushButton[role="pill"]:disabled {
+    background: @bg-active;
+    color: @text-mute;
+    border-color: transparent;
+}
+
+/* 只放一个图标的方形按钮 */
+QPushButton[role="icon"] {
+    background: transparent;
+    border: none;
+    border-radius: 7px;
+}
+QPushButton[role="icon"]:hover   { background: @bg-hover; }
+QPushButton[role="icon"]:pressed { background: @bg-active; }
+
+/* ------------------------------------------------------------ 输入控件 --- */
+
+QLineEdit {
+    background: @bg-input;
+    border: 1px solid @border-strong;
+    border-radius: 8px;
+    padding: 0px 12px;
+    min-height: 36px;
+    font-size: 13px;
+    color: @text;
+    selection-background-color: @accent;
+    selection-color: #FFFFFF;
+}
+QLineEdit:hover { border-color: @text-mute; }
+QLineEdit:focus { border-color: @accent; }
+QLineEdit:disabled { color: @text-mute; background: @bg-active; border-color: @border; }
+
+#SearchBox {
+    background: @bg-input;
+    border: 1px solid @border-strong;
+    border-radius: 9px;
+    padding-left: 36px;
+    min-height: 38px;
+}
+#SearchBox:focus { border-color: @accent; }
+
+QSpinBox {
+    background: @bg-input;
+    border: 1px solid @border-strong;
+    border-radius: 8px;
+    padding: 0px 12px;
+    min-height: 36px;
+    font-size: 13px;
+    color: @text;
+}
+QSpinBox:hover { border-color: @text-mute; }
+QSpinBox:focus { border-color: @accent; }
+
+/* 上下箭头必须显式收掉。QSpinBox 一旦被 QSS 设了 border / border-radius，
+   子控件（up-button / down-button）就不再跟着圆角走，会被画到边框**外面**去，
+   表现为字段右边挂着一个「⌐」形的括号。和上面 QComboBox 的处理一致。 */
+QSpinBox::up-button, QSpinBox::down-button {
+    subcontrol-origin: border;
+    width: 0px;
+    height: 0px;
+    border: none;
+    background: transparent;
+}
+QSpinBox::up-arrow, QSpinBox::down-arrow {
+    image: none;
+    width: 0px;
+    height: 0px;
+}
+
+QComboBox {
+    background: @bg-input;
+    border: 1px solid @border-strong;
+    border-radius: 8px;
+    /* 右边给箭头留出 :drop-down 那块地方，不然长文本会顶到箭头上 */
+    padding: 0px 12px;
+    min-height: 36px;
+    font-size: 13px;
+    color: @text;
+}
+QComboBox:hover { border-color: @text-mute; }
+QComboBox:focus { border-color: @accent; }
+/* :on 是「列表正弹着」。保持高亮，让用户知道点开的是哪一个 */
+QComboBox:on { border-color: @accent; }
+
+/* 箭头区。width 和 Widgets.cpp 里的 kArrowZone 是同一个值。 */
+QComboBox::drop-down {
+    subcontrol-origin: border;
+    subcontrol-position: center right;
+    width: 30px;
+    border: none;
+    background: transparent;
+}
+/* 原生箭头关掉 —— 箭头由 SelectBox::paintEvent 自己画，理由见那边的注释 */
+QComboBox::down-arrow { image: none; width: 0px; height: 0px; }
+
+/* 注意：下拉框**弹出列表**的样式不在这里。
+   写在这个文件里不管用（`QComboBox QAbstractItemView` 和 objectName 两种选择器
+   都试过，一条都不生效），原因是那条匹配链靠不住。样式挂在
+   SelectBox 构造函数里、直接 setStyleSheet 到 view 上，改那儿去。 */
+
+QCheckBox { font-size: 13px; color: @text-dim; spacing: 8px; }
+QCheckBox::indicator {
+    width: 17px; height: 17px;
+    border: 1px solid @border-strong;
+    border-radius: 5px;
+    background: @bg-input;
+}
+QCheckBox::indicator:hover   { border-color: @accent; }
+QCheckBox::indicator:checked { background: @accent; border-color: @accent; }
+
+QLabel[role="fieldLabel"] {
+    font-size: 12px;
+    color: @text-dim;
+    font-weight: 500;
+}
+
+QTextEdit {
+    background: @bg-input;
+    border: 1px solid @border-strong;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: @text;
+    selection-background-color: @accent;
+    selection-color: #FFFFFF;
+}
+QTextEdit:focus { border-color: @accent; }
+
+/* -------------------------------------------------------- 设置页选项卡 --- */
+
+/* 「基本设置 / 外观设置」。容器是一块比页面底色深一点的圆角槽，
+   选中项是浮在槽里的浅色块。不要用 QTabWidget —— 那套页签的尺寸和
+   内边距在深色主题下很难和侧栏对齐。 */
+#SettingsTabs {
+    background: @bg-active;
+    border: 1px solid @border;
+    border-radius: 10px;
+}
+QPushButton[role="segment"] {
+    background: transparent;
+    /* 未选中时也留 1px 透明边框，选中时只换颜色不换尺寸，
+       否则切换选项卡会看到按钮内容跳一下 */
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 0px 18px;
+    min-height: 32px;
+    font-size: 13px;
+    color: @text-mute;
+}
+QPushButton[role="segment"]:hover { color: @text; }
+QPushButton[role="segment"]:checked {
+    background: @bg-panel;
+    border-color: @border-strong;
+    color: @text;
+}
+
+/* 背景图蒙层浓度。QSlider 没有样式时走 Fusion 的默认外观（浅色），
+   在深色页面上很突兀，所以滑槽和滑块都得写。 */
+QSlider { min-height: 20px; }
+QSlider::groove:horizontal {
+    height: 4px;
+    background: @bg-active;
+    border-radius: 2px;
+}
+QSlider::sub-page:horizontal {
+    background: @accent;
+    border-radius: 2px;
+}
+QSlider::add-page:horizontal {
+    background: @bg-active;
+    border-radius: 2px;
+}
+QSlider::handle:horizontal {
+    width: 14px;
+    height: 14px;
+    margin: -5px 0px;
+    border-radius: 7px;
+    background: @text-dim;
+    border: 1px solid @border-strong;
+}
+QSlider::handle:horizontal:hover {
+    background: @accent;
+    border-color: @accent;
+}
+QSlider::handle:horizontal:disabled {
+    background: @border-strong;
+    border-color: @border;
+}
+
+/* ------------------------------------------------------------ 滚动条 --- */
+
+QScrollBar:vertical {
+    background: transparent;
+    width: 10px;
+    margin: 2px 2px 2px 0px;
+}
+QScrollBar::handle:vertical {
+    background: @border-strong;
+    border-radius: 5px;
+    min-height: 32px;
+}
+QScrollBar::handle:vertical:hover { background: @text-mute; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+
+QScrollBar:horizontal {
+    background: transparent;
+    height: 10px;
+    margin: 0px 2px 2px 2px;
+}
+QScrollBar::handle:horizontal {
+    background: @border-strong;
+    border-radius: 5px;
+    min-width: 32px;
+}
+QScrollBar::handle:horizontal:hover { background: @text-mute; }
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0px; }
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
+
+QScrollArea { background: transparent; border: none; }
+QScrollArea > QWidget > QWidget { background: transparent; }
+
+/* ------------------------------------------------------------ 列表/树 --- */
+
+QListWidget, QTreeWidget {
+    background: transparent;
+    border: none;
+    outline: none;
+    font-size: 13px;
+}
+QListWidget::item, QTreeWidget::item {
+    min-height: 34px;
+    border-radius: 8px;
+    padding: 0px 8px;
+    color: @text-dim;
+}
+QListWidget::item:hover, QTreeWidget::item:hover { background: @bg-hover; color: @text; }
+QListWidget::item:selected, QTreeWidget::item:selected {
+    background: @accent-soft;
+    color: @accent-text;
+}
+
+/* -------------------------------------------------------------- 菜单 --- */
+
+QMenu {
+    background: @bg-elevated;
+    border: 1px solid @border-strong;
+    border-radius: 10px;
+    padding: 6px;
+}
+QMenu::item {
+    padding: 8px 28px 8px 12px;
+    border-radius: 7px;
+    font-size: 13px;
+    color: @text-dim;
+}
+QMenu::item:selected { background: @accent-soft; color: @accent-text; }
+QMenu::item:disabled { color: @text-mute; }
+QMenu::separator { height: 1px; background: @border; margin: 6px 8px; }
+
+/* ------------------------------------------------------------ 对话框 --- */
+
+QDialog { background: @bg-app; }
+
+/* 底部状态条。原来是 MainWindow 里拼的内联样式，用了 QColor::name()，
+   rgba 的 alpha 会被丢掉；现在背景图要透上来，改由 QSS 给。 */
+#StatusBar {
+    background: @bg-statusbar;
+    border: none;
+    border-top: 1px solid @border;
+}
+
+/* 新建 / 编辑连接：无边框对话框，描边自己补（和主窗口 #Root 一个道理） */
+#DialogRoot {
+    background: @bg-app;
+    border: 1px solid @border-strong;
+}
+#DialogHeader {
+    background: @bg-app;
+    border: none;
+    border-bottom: 1px solid @border;
+}
+#FormFooter {
+    background: @bg-app;
+    border: none;
+    border-top: 1px solid @border;
+}
+QLabel[role="dialogTitle"] {
+    font-size: 18px;
+    font-weight: 600;
+    color: @text;
+}
+/* 表单里的分组标题：「连接信息」「认证」「其他信息」。
+   字比字段标签小、颜色更淡，靠上下留白分组，不画线 —— 12 个字段已经够挤了。
+   **不要在这里加 padding-top**：QSS 的 padding 要等控件 polish 之后才进
+   sizeHint，而 formContentHeight() 是在弹窗构造时量的，量完窗口会矮一截，
+   最后一行得滚才看得见。分组间距由代码里的 spacer 行给，布局会算进高度。 */
+QLabel[role="formSection"] {
+    font-size: 12px;
+    font-weight: 600;
+    color: @text-mute;
+}
+
+/* 检查更新对话框。标题 / 说明用 role 区分层级，正文仍然是 @text-dim ——
+   这一页只有一屏内容，不需要再往上堆字号。 */
+QLabel[role="dialogHeadline"] { font-size: 16px; font-weight: 600; color: @text; }
+QLabel[role="dialogDetail"]   { font-size: 13px; color: @text-dim; }
+
+/* Release notes。底和边框走 QSS；正文颜色还要在代码里设 palette，
+   否则 QTextBrowser 渲染 markdown 时会用默认的黑色（见 UpdateDialog.cpp）。 */
+QTextBrowser {
+    background: @bg-input;
+    border: 1px solid @border;
+    border-radius: 8px;
+    padding: 6px;
+    color: @text-dim;
+    selection-background-color: @accent-soft;
+    selection-color: @text;
+}
+
+QMessageBox { background: @bg-app; }
+QMessageBox QLabel { color: @text; font-size: 13px; }
+QDialogButtonBox QPushButton {
+    background: @bg-input;
+    border: 1px solid @border-strong;
+    border-radius: 8px;
+    padding: 0px 16px;
+    min-height: 32px;
+    font-size: 13px;
+    color: @text-dim;
+}
+QDialogButtonBox QPushButton:hover { background: @bg-hover; color: @text; }
+
+/* ------------------------------------------------------------ 终端页 --- */
+
+/* 抽屉面板（Drawer 里的那个 QScrollArea）。它和侧栏是对称的：侧栏白底往右
+   投影子，这块往左投。面板要通到窗口上下右三边，所以页面的外边距都是加在
+   内容区身上的，最外层边距为 0。 */
+#DrawerPanel {
+    background: @bg-panel;
+    border-left: 1px solid @border;
+}
+
+/* 终端窗口**不要边框**：一块直接铺在页面上的终端面，
+   不套卡片、不描边。状态条也一起拍平，只留文字。 */
+#TerminalWrap {
+    /* 透明：底下的 TerminalView 自己会用 94% 的 term-bg 铺一遍。
+       这里再铺一层同色会变成「两层 94%」，背景图等于彻底看不见了。 */
+    background: transparent;
+    border: none;
+    border-radius: 0;
+}
+
+#TerminalStatusBar {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+}
+#TerminalStatusBar QLabel { color: @text-mute; font-size: 12px; }
+
+QTabWidget::pane {
+    border: none;
+    background: transparent;
+}
+QTabBar { background: transparent; qproperty-drawBase: 0; }
+
+/* 终端标签。
+   宽度不在这里定 —— 由 TerminalTabBar::tabSizeHint() 按名字算，
+   这里的 padding 左右各 12px 必须和那边 kTabPaddingH 保持一致。
+   也**不要**加 max-width：加了又会把长名字往回压。 */
+/* 宽度不在这里定 —— 由 TerminalTabBar::tabSizeHint() 按名字算，
+   这里的 padding 左右各 12px 必须和那边 kTabPaddingH 保持一致。
+   也**不要**加 max-width（加了又会把长名字压回去）或 margin-bottom
+   （标签栏和终端之间的间隙由页面布局给，加了这里会让标签矩形比画出来的盒子高，
+   里面的文字和关闭按钮就不居中了）。 */
+QTabBar::tab {
+    background: transparent;
+    color: @text-mute;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 7px 26px 7px 8px;
+    margin-right: 4px;
+    /* 这里**不要**写 font-size。写了之后 QSS 画的标签文字里，数字和汉字的基线会错开 ——
+       数字被画低一截再裁掉下半，「本地 2」显示出来是个缺底的 2、「本地 3」同理，
+       而汉字看着好好的，特别难往这里想。另外 tabSizeHint() 里的 horizontalAdvance()
+       是按控件字体（14px）算的，字号写别的值还会让宽度算不准。 */
+}
+QTabBar::tab:hover {
+    background: @bg-hover;
+    color: @text-dim;
+}
+/* 选中的标签**不加粗**。加粗会改字体度量：宽度是按常规体算的（tabSizeHint 里
+   用的是标签栏的字体），画出来却是粗体、比算出来的宽，文字在盒子里就被挤得移位。
+   选中态靠白底 + 描边 + 更深的名字已经足够区分。 */
+QTabBar::tab:selected {
+    background: @bg-panel;
+    color: @text;
+    border-color: @border;
+}
+QTabBar::tab:selected:hover {
+    background: @bg-panel;
+    color: @text;
+}
+
+/* 标签上的关闭按钮。图标颜色是烘在 QIcon 里的（正常灰、悬停红），
+   这里只管背景 —— QSS 改不了 QIcon 的颜色。 */
+#TabCloseButton {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+}
+#TabCloseButton:hover {
+    background: @err-soft;
+}
+
+/* ---------------------------------------------------------- 其它文本 --- */
+
+QLabel[role="pageTitle"] {
+    font-size: 14px;
+    font-weight: 600;
+    color: @text;
+}
+/* 标题右边的数量（「12 台」）。比标题小一档、用弱化色，不跟标题抢视线 */
+QLabel[role="pageCount"] {
+    font-size: 12px;
+    color: @text-mute;
+}
+QLabel[role="pageSubtitle"] {
+    font-size: 13px;
+    color: @text-dim;
+}
+QLabel[role="sectionTitle"] {
+    font-size: 15px;
+    font-weight: 600;
+    color: @text;
+}
+QLabel[role="hint"] {
+    font-size: 12px;
+    color: @text-mute;
+}
+QLabel[role="mono"] {
+    font-size: 12px;
+    color: @text-dim;
+}
+QLabel[role="empty"] {
+    color: @text-mute;
+    font-size: 13px;
+}
+
+/* 列表空状态：一个细线条图标 + 标题 + 说明。
+   标题**不要**用纯白 + 半粗：那会比周围内容更抢眼，空页面反而显得重。
+   用次级文字色 + 中等字重，整体安静下来。 */
+QLabel[role="emptyTitle"] {
+    color: @text-dim;
+    font-size: 14px;
+    font-weight: 500;
+}
+QLabel[role="emptyHint"] {
+    color: @text-mute;
+    font-size: 12px;
+}
+
+/* 首页那种小统计块 */
+QLabel[role="statValue"] {
+    font-size: 22px;
+    font-weight: 600;
+    color: @text;
+}
+QLabel[role="statLabel"] {
+    font-size: 12px;
+    color: @text-mute;
+}
+
+QProgressBar {
+    background: @bg-active;
+    border: none;
+    border-radius: 3px;
+    height: 6px;
+    text-align: center;
+}
+QProgressBar::chunk { background: @accent; border-radius: 3px; }

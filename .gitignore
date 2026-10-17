@@ -1,0 +1,110 @@
+# ===========================================================================
+# EmShell —— Git 忽略规则
+#
+# 只忽略「生成物」和「本机配置」。下面这些东西**不能**忽略：
+#   third_party/libssh2/     静态库是提交进仓库的（见 third_party/README.md）
+#   .vscode/launch.json      项目共用的 Qt / MinGW 调试配置
+#   .vscode/settings.json    项目共用的 CMake / IntelliSense 配置
+#   tools/                   打包和自更新测试脚本
+#   resources/               图标和 QSS
+# ===========================================================================
+
+# ---------------------------------------------------------------- 构建目录 ---
+
+/build/
+/dist/
+/out/
+/cmake-build-*/
+/debug/
+/release/
+.cache/
+
+# CMake / Ninja 在源码目录里留下的东西（正常都在 build/ 里，双保险）
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+install_manifest.txt
+compile_commands.json
+build.ninja
+rules.ninja
+.ninja_deps
+.ninja_log
+*.ninja
+Makefile
+CMakeUserPresets.json
+
+# ---------------------------------------------------------------- 编译产物 ---
+
+*.o
+*.obj
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.exp
+*.d
+
+# 注意：**不要忽略 *.a** —— third_party/libssh2/lib/libssh2.a 是要提交的。
+
+# ------------------------------------------------------------- Qt / IDE ---
+
+*.user
+*.user.*
+CMakeLists.txt.user*
+.qtc_clangd/
+*.autosave
+moc_*.cpp
+*.moc
+qrc_*.cpp
+ui_*.h
+
+.idea/
+.vs/
+*.sln
+*.vcxproj*
+*.cbp
+
+# VS Code：保留 launch.json / settings.json，只忽略本机缓存
+.vscode/ipch/
+.vscode/.browse.*
+.vscode/*.log
+.vscode/*.bak
+
+# ------------------------------------------------------- 日志 / 调试产物 ---
+
+# 自检、UI 量测、截图。它们都写在当前工作目录，通常在 build/debug 里
+# （已被忽略），这里再兜一层，免得从项目根目录跑测试时漏进来。
+*.log
+uitrace.log
+uitrace.png
+/*.png
+/*.tree
+selftest.log*
+
+*.tmp
+*.bak
+*~
+*.swp
+*.orig
+*.rej
+
+# ---------------------------------------------------------------- 系统文件 ---
+
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# ------------------------------------------------------- 根目录文档 ---
+
+# 只提交给用户看的 README 和给开发者看的 DEVELOPMENT；其余根目录 Markdown
+# 属于本机笔记，不入库。
+/*.md
+!/README.md
+!/DEVELOPMENT.md
+
+# 根目录的隐藏工具目录一律不入库；只保留项目共用的 .vscode 和 .github
+/.*/
+!/.vscode/
+!/.github/

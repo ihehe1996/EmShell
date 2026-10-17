@@ -1,0 +1,10 @@
+/* EmShell executable icon.
+ *
+ * Compiled by windres into the PE resource section. Explorer, the taskbar and
+ * shortcuts read this one; the PNG in resources.qrc is the runtime QIcon.
+ *
+ * Keep this file pure ASCII: windres preprocesses it with cpp using the system
+ * code page, so non-ASCII text here can break the parse.
+ */
+#define IDI_EMSHELL 1
+IDI_EMSHELL ICON "icons/app-logo.ico"

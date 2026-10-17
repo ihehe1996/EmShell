@@ -1,0 +1,672 @@
+#include "ui/TerminalPage.h"
+
+#include "app/Theme.h"
+#include "model/ConnectionStore.h"
+#include "model/KeyStore.h"
+#include "terminal/LocalSession.h"
+#include "terminal/TerminalView.h"
+#include "ui/IconProvider.h"
+#include "ui/SettingsPage.h"
+#include "ui/Widgets.h"
+
+#include <QFileInfo>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QMessageBox>
+#include <QPointer>
+#include <QStackedWidget>
+#include <QTabBar>
+#include <QTabWidget>
+#include <QToolButton>
+#include <QVBoxLayout>
+
+namespace Em {
+
+namespace {
+
+// Windows 命令行里带空格的路径要加引号
+QString quoteArg(const QString &arg)
+{
+    if (!arg.contains(QLatin1Char(' ')) && !arg.contains(QLatin1Char('"')))
+        return arg;
+    QString escaped = arg;
+    escaped.replace(QLatin1Char('"'), QLatin1String("\\\""));
+    return QLatin1Char('"') + escaped + QLatin1Char('"');
+}
+
+// ---------------------------------------------------------- 标签栏 ---
+
+// 标签宽度按这几段拼出来。左内边距、右内边距、margin-right 都要和 app.qss 里
+// QTabBar::tab 的那几个值对上，改一边就得改另一边。
+constexpr int kTabPaddingH = 8;         // 文字距标签盒子左边（= QSS 的 padding-left）
+constexpr int kTabMarginRight = 4;       // = QSS 的 margin-right
+constexpr int kTabCloseSize = 16;        // 关闭按钮的边长
+constexpr int kTabCloseRightMargin = 12; // 关闭按钮距**画出来的**盒子右边
+
+// 标签的右内边距 = 给关闭按钮预留的那一整块（必须和 app.qss 的 padding-right 一致）。
+//
+// 这是治「名字和 ✕ 之间空一大截」的关键：Qt 画标签文字是**居中**排的，右内边距小的话
+// 文字就被推到整块空间的中间，右边自然空出一大块；而想从宽度上补回去，字又会被裁。
+// 把右内边距设成「✕ 那一整块」，文字能用的横向空间就只剩「文字 + 一点余量」，居中
+// 等于左对齐，✕ 落在内边距里 —— 两边都不用挤。
+constexpr int kTabPaddingRight = 26;
+
+// 文字能用的横向空间比 horizontalAdvance() 多留这么几个像素，吸收「算出来的宽度」
+// 和「画出来的墨迹」之间的出入（字距、取整）。**给小了会裁掉最后一个字的最后一笔**。
+constexpr int kTabTextSlack = 15;
+
+// 文字末尾到关闭按钮之间留多少（眼睛看到的那个空隙）。
+constexpr int kTabCloseGap = 6;       // 文字末尾到关闭按钮之间
+
+class TerminalTabBar : public QTabBar
+{
+public:
+    explicit TerminalTabBar(QWidget *parent = nullptr) : QTabBar(parent) {}
+
+protected:
+    // 自己摆每个标签的关闭按钮 —— **不要**用 QTabBar::setTabButton()。
+    //
+    // 挂上去之后 Qt 会在文字区里额外扣一圈（扣得比控件本身还宽约 9px），那 9px 不论
+    // 从哪边补都难看。自己摆就没这回事：宽度完全由 tabSizeHint() 说了算，按钮落在
+    // 右内边距那块里，碰不到文字。
+    void paintEvent(QPaintEvent *event) override
+    {
+        QTabBar::paintEvent(event);
+        // 标签增删、拖动、滚动都会重画标签栏，借这里把按钮重新贴上去
+        repinCloseButtons();
+    }
+
+    // 每个标签都给「名字完整显示」需要的宽度，一个字都不省、也不压缩。
+    // 总宽超过标签栏时由 QTabBar 自己滚动（这是唯一能碰到后面那些标签的办法）。
+    QSize tabSizeHint(int index) const override
+    {
+        return QSize(preferredWidth(index), QTabBar::tabSizeHint(index).height());
+    }
+
+    // 这里**不要**覆盖 minimumTabSizeHint()。
+    //
+    // 它决定「标签能被压到多窄」：Qt 默认给的是完整宽度，于是标签装不下时 Qt
+    // 只能滚动，名字一个字都不会少。一旦把它改小（哪怕只是想控制标签栏的最小
+    // 宽度），Qt 立刻就不再滚动、改成把所有标签一起压缩 —— 名字就被切了。
+    // 代价是标签栏的最小宽度跟着标签数涨，但 QTabWidget 那边本来就允许滚动，
+    // 实测窗口照样能缩窄。
+
+private:
+    // 名字完整显示需要的宽度
+    int preferredWidth(int index) const
+    {
+        const int textWidth = fontMetrics().horizontalAdvance(tabText(index));
+        return kTabPaddingH + textWidth + kTabTextSlack
+               + kTabPaddingRight + kTabMarginRight;
+    }
+
+    // 把每个关闭按钮摆到它那个标签的右内边距里。
+    //
+    // 按钮是标签栏的子控件（不是 setTabButton 挂的），靠 page 属性认领自己属于哪一页 ——
+    // 页码用 QTabWidget::indexOf() 现查，标签拖动、增删之后不用维护。
+    void repinCloseButtons()
+    {
+        auto *tabs = qobject_cast<QTabWidget *>(parentWidget());
+        if (!tabs)
+            return;
+
+        for (QToolButton *btn : findChildren<QToolButton *>(QStringLiteral("TabCloseButton"))) {
+            auto *page = btn->property("page").value<QWidget *>();
+            const int index = page ? tabs->indexOf(page) : -1;
+            if (index < 0) {
+                btn->hide();
+                continue;
+            }
+
+            const QRect r = tabRect(index);
+            if (r.right() < 0 || r.left() > width()) {   // 滚到可视范围外了
+                btn->hide();
+                continue;
+            }
+
+            // 位置**跟着文字末尾**算，而不是绑标签右边。
+            //
+            // 文字是 Qt 居中排的，居中用的那块宽度 = 标签宽 - 左内边距 - 右内边距，
+            // 这两项都固定，所以文字实际画在哪能算得和 Qt 一模一样。算出文字的末尾，
+            // ✕ 往右让开 kTabCloseGap 就是。绑右边的话，右边那点余量（右内边距减去
+            // ✕ 那一块）会全变成文字和 ✕ 之间的空白。
+            const int textW = fontMetrics().horizontalAdvance(tabText(index));
+            const int areaW = r.width() - kTabMarginRight - kTabPaddingH - kTabPaddingRight;
+            const int textLeft = r.left() + kTabPaddingH + qMax(0, (areaW - textW) / 2);
+            const int x = qMin(textLeft + textW + kTabCloseGap,
+                               r.right() - kTabMarginRight - kTabCloseRightMargin - kTabCloseSize);
+
+            btn->setGeometry(x, r.top() + (r.height() - kTabCloseSize) / 2,
+                             kTabCloseSize, kTabCloseSize);
+            btn->show();
+            btn->raise();
+        }
+    }
+};
+
+// 标签上的关闭按钮。
+//
+// Qt 自带那个是 Fusion 用样式画出来的灰方块，跟整套界面完全不搭，而且
+// **QSS 改不了它的图标颜色**（它不是图片，是样式画的）。所以自己放一个：
+// 图标走 Icons::pixmap()，颜色从 Theme 取，正常灰、悬停红 —— 和侧边栏、
+// 连接行那里用的是同一个路子（颜色烘进 QIcon，QSS 只管背景）。
+class TabCloseButton : public QToolButton
+{
+public:
+    explicit TabCloseButton(QWidget *parent = nullptr) : QToolButton(parent)
+    {
+        setObjectName(QStringLiteral("TabCloseButton"));
+        setCursor(Qt::PointingHandCursor);
+        setFocusPolicy(Qt::NoFocus);
+        setAutoRaise(true);
+        // 不给 tooltip：一个 ✕ 上飘个「关闭」的气泡纯属碍事，鼠标扫过时很吵
+        setFixedSize(kTabCloseSize, kTabCloseSize);
+
+        const int iconSize = 12;
+        setIconSize(QSize(iconSize, iconSize));
+
+        QIcon closeIcon;
+        closeIcon.addPixmap(Icons::pixmap(Icon::Close,
+                                          Theme::color(QStringLiteral("text-mute")), iconSize),
+                            QIcon::Normal, QIcon::Off);
+        closeIcon.addPixmap(Icons::pixmap(Icon::Close,
+                                          Theme::color(QStringLiteral("err")), iconSize),
+                            QIcon::Active, QIcon::Off);
+        setIcon(closeIcon);
+    }
+};
+
+// 用自己那套标签栏。setTabBar() 是 protected，只能在自己类里换，
+// 所以这里绕一层。
+class TerminalTabWidget : public QTabWidget
+{
+public:
+    explicit TerminalTabWidget(QWidget *parent = nullptr) : QTabWidget(parent)
+    {
+        setTabBar(new TerminalTabBar(this));
+    }
+};
+
+} // namespace
+
+TerminalPage::TerminalPage(ConnectionStore *store, KeyStore *keys, QWidget *parent)
+    : QWidget(parent)
+    , m_store(store)
+    , m_keys(keys)
+{
+    m_tabBar = new TerminalTabWidget(this);
+    // **这里必须是 false。** 关闭按钮是我们自己放的（见 createTab 里的 TabCloseButton），
+    // 但 Qt 只要看到 tabsClosable 是 true，就还会在**文字区**里再给「它以为存在的」那个
+    // 关闭按钮留一份宽度（实测约 14px）—— 于是标签名最后那个字被裁掉一截，而且因为
+    // Qt 是在文字区里居中排的，看着像「字的底少了一块」（「本地 2」的 2 只剩一小条）。
+    // 关掉它，Qt 就不再保留，文字区正好等于 tabSizeHint() 算出来的宽度。
+    // 代价：中键点标签关闭不再生效（我们自己的 ✕ 按钮照常工作）。
+    m_tabBar->setTabsClosable(false);
+    m_tabBar->setMovable(true);
+    m_tabBar->setDocumentMode(true);
+
+    // 标签名一个字都不省略，永远完整显示（宽度由 TerminalTabBar::tabSizeHint 按
+    // 名字算）。标签多到装不下时由标签栏滚动 —— 滚动时边缘会露出半个标签，那是
+    // 「滚到这儿了」，不是名字被截断。
+    m_tabBar->setElideMode(Qt::ElideNone);
+    m_tabBar->tabBar()->setExpanding(false);
+
+    // 标签栏右边加一个「新建」小按钮
+    auto *newLocal = new PillButton(QString(), PillButton::Subtle, this);
+    newLocal->makeCompact(Icon::Plus, 15, QStringLiteral("新建本地终端"));
+    connect(newLocal, &QPushButton::clicked, this, [this] { openLocalSession(); });
+    m_tabBar->setCornerWidget(newLocal, Qt::TopRightCorner);
+
+    connect(m_tabBar, &QTabWidget::tabCloseRequested, this, &TerminalPage::closeTab);
+    connect(m_tabBar, &QTabWidget::currentChanged, this, [this](int) {
+        if (Tab *tab = currentTab()) {
+            tab->view->setFocus();
+            updateStatus(tab);
+        }
+    });
+
+    // 一个标签都没有的时候显示空状态，而不是一个空标签栏。
+    // 用整页切换而不是让两个控件互相 setVisible —— 那样得两处同步开关，
+    // 漏一处就会出现「空状态和标签栏同时挂着」。
+    m_stack = new QStackedWidget(this);
+    m_stack->addWidget(m_emptyPage = buildEmptyState());
+    m_stack->addWidget(m_tabBar);
+
+    auto *root = new QVBoxLayout(this);
+    root->setContentsMargins(0, 0, 0, 0);
+    root->addWidget(m_stack);
+}
+
+// 一个标签都没有时显示的那张页。两个入口：开一个本地终端、去「所有连接」页。
+// 新建连接不在这儿 —— 侧栏顶上那个按钮是常驻的，这里再来一个只是重复。
+QWidget *TerminalPage::buildEmptyState()
+{
+    auto *page = new QWidget;
+
+    auto *title = makeLabel(QStringLiteral("未连接任何终端"), "empty", page);
+    title->setAlignment(Qt::AlignCenter);
+
+    auto *subtitle = makeLabel(QStringLiteral("请选择您的操作："), "hint", page);
+    subtitle->setAlignment(Qt::AlignCenter);
+
+    // 三个 ActionTile。容器用透明 QWidget 而不是 Card —— tile 自己就是
+    // 白底卡片，外面再套一层 Card 会变成双层边框。
+    auto *row = new QWidget(page);
+    auto *rowLayout = new QHBoxLayout(row);
+    rowLayout->setContentsMargins(0, 0, 0, 0);
+    rowLayout->setSpacing(12);
+
+    auto *tileLocal = new ActionTile(Icon::Terminal, QStringLiteral("打开本机终端"),
+                                     QStringLiteral("启动一个本地 shell 会话"), row);
+    auto *tileAll = new ActionTile(Icon::Server, QStringLiteral("查看所有连接"),
+                                   QStringLiteral("浏览、编辑已保存的服务器"), row);
+
+    // 宽度必须统一给死：tile 的最小宽度是按文字算的，两张会参差不齐
+    for (ActionTile *tile : { tileLocal, tileAll }) {
+        tile->setFixedWidth(200);
+        tile->setFixedHeight(112);
+        rowLayout->addWidget(tile);
+    }
+
+    connect(tileLocal, &ActionTile::clicked, this, [this] {
+        openLocalSession(SettingsPage::preferredShell());
+    });
+    connect(tileAll, &ActionTile::clicked, this, &TerminalPage::browseConnectionsRequested);
+
+    // 整行左右各一条 stretch，把它顶在水平中央
+    auto *centered = new QWidget(page);
+    auto *centerLayout = new QHBoxLayout(centered);
+    centerLayout->setContentsMargins(0, 0, 0, 0);
+    centerLayout->addStretch(1);
+    centerLayout->addWidget(row);
+    centerLayout->addStretch(1);
+
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(24, 24, 24, 24);
+    layout->setSpacing(6);
+    layout->addStretch(1);
+    layout->addWidget(title);
+    layout->addWidget(subtitle);
+    layout->addSpacing(18);
+    layout->addWidget(centered);
+    layout->addStretch(1);
+
+    return page;
+}
+
+void TerminalPage::updateEmptyState()
+{
+    if (!m_stack)
+        return;
+    m_stack->setCurrentWidget(m_tabs.isEmpty() ? m_emptyPage
+                                               : static_cast<QWidget *>(m_tabBar));
+}
+
+TerminalPage::Tab *TerminalPage::tabAt(int index) const
+{
+    for (Tab *tab : m_tabs) {
+        if (tab->index == index)
+            return tab;
+    }
+    return nullptr;
+}
+
+TerminalPage::Tab *TerminalPage::currentTab() const
+{
+    return tabAt(m_tabBar->currentIndex());
+}
+
+TerminalPage::Tab *TerminalPage::createTab(const QString &title)
+{
+    auto *tab = new Tab;
+    tab->title = title;
+
+    tab->container = new QWidget;
+    tab->view = new TerminalView(tab->container);
+
+    // 状态条：会话说明 + 终端尺寸，右边显示光标位置
+    tab->status = makeLabel(QString(), "hint", tab->container);
+    auto *statusBar = new QWidget(tab->container);
+    statusBar->setObjectName(QStringLiteral("TerminalStatusBar"));
+    statusBar->setFixedHeight(26);
+
+    auto *statusLayout = new QHBoxLayout(statusBar);
+    statusLayout->setContentsMargins(12, 0, 12, 0);
+    statusLayout->addWidget(tab->status);
+    statusLayout->addStretch();
+
+    auto *terminalWrap = new QWidget(tab->container);
+    terminalWrap->setObjectName(QStringLiteral("TerminalWrap"));
+    auto *wrapLayout = new QVBoxLayout(terminalWrap);
+    // 原来留 1px 是为了不压住圆角边框；现在没有边框了，直接贴边
+    wrapLayout->setContentsMargins(0, 0, 0, 0);
+    wrapLayout->addWidget(tab->view);
+
+    auto *layout = new QVBoxLayout(tab->container);
+    // 左边距给 0：终端要紧贴着左边的侧栏，中间留一条白缝很难看。
+    // 另外三边留 8，让终端面板和标签栏之间有个呼吸。
+    layout->setContentsMargins(0, 8, 8, 8);
+    layout->setSpacing(0);
+    layout->addWidget(terminalWrap);
+    layout->addWidget(statusBar);
+
+    tab->index = m_tabBar->addTab(tab->container, title);
+    // 标签上的字就是这个名字，之后只有 tooltip 会被会话报的标题更新
+    m_tabBar->setTabToolTip(tab->index, title);
+    m_tabs.append(tab);
+
+    // 关闭按钮：自己画的（理由见 TabCloseButton），**直接挂在标签栏上、位置自己摆**
+    // （理由见 TerminalTabBar::repinCloseButtons），不走 setTabButton()。
+    // page 属性告诉它自己属于哪一页，摆位置和响应点击时都靠它现查索引。
+    auto *closeButton = new TabCloseButton(m_tabBar->tabBar());
+    closeButton->setProperty("page", QVariant::fromValue<QWidget *>(tab->container));
+
+    const QPointer<QWidget> container(tab->container);
+    connect(closeButton, &QToolButton::clicked, this, [this, container] {
+        if (!container)
+            return;
+        const int index = m_tabBar->indexOf(container);   // 点的时候再取，标签会挪位
+        if (index >= 0)
+            closeTab(index);
+    });
+
+    updateEmptyState();   // 有标签了，把空状态换成标签栏
+
+    connect(tab->view, &TerminalView::titleChanged, this, [this, tab](const QString &t) {
+        applyTitle(tab, t);
+    });
+    connect(tab->view, &TerminalView::sessionFinished, this, [this, tab](int code) {
+        updateStatus(tab);
+        emit statusMessage(QStringLiteral("%1：会话结束（退出码 %2）").arg(tab->title).arg(code));
+    });
+
+    return tab;
+}
+
+// 会话报了窗口标题（OSC 0/2）。**只更新 tooltip，不动标签上的字。**
+//
+// 原来这里是拿标题覆盖标签名的，但那个标题基本没法用：
+//
+//  - ConPTY 一启动就会把子进程的控制台标题报上来，而那就是可执行文件的完整
+//    路径（`C:\WINDOWS\...\powershell.exe`）。于是「本地 1」「雨云 - 香港 -
+//    密钥」这些名字当场被冲掉，标签上只剩一个 exe 文件名，看不出连的是哪台机器。
+//  - 远端 shell 也会报标题（Ubuntu 的 .bashrc 默认就设成「user@host: 路径」），
+//    同样会把连接名顶掉。
+//
+// 这个程序里标签的意义是「这是哪条连接」，用户起的名字比任何程序报上来的标题
+// 都更该信，所以标签名在建标签时就定下来，之后不再改。标题想看的话悬停就有。
+void TerminalPage::applyTitle(Tab *tab, const QString &title)
+{
+    if (title.trimmed().isEmpty())
+        return;
+
+    m_tabBar->setTabToolTip(tab->index, title);
+}
+
+void TerminalPage::updateStatus(Tab *tab)
+{
+    if (!tab || !tab->view)
+        return;
+
+    TerminalScreen *screen = tab->view->screen();
+    QString desc = tab->session ? tab->session->description() : QStringLiteral("无会话");
+
+    // SSH 会话把连接阶段也显示出来，用户能看出是「卡住了」还是「在认证」
+    if (auto *ssh = qobject_cast<SshSession *>(tab->session)) {
+        static const char *labels[] = {
+            "", "连接中", "握手中", "校验主机密钥", "认证中", "打开终端", "已连接", "失败", "已断开"
+        };
+        const int s = int(ssh->state());
+        if (s > 0 && s < int(sizeof(labels) / sizeof(labels[0])))
+            desc += QStringLiteral(" · ") + QString::fromUtf8(labels[s]);
+    }
+
+    QString text = QStringLiteral("%1    %2 × %3")
+                       .arg(desc)
+                       .arg(screen->cols())
+                       .arg(screen->rows());
+    if (tab->view->sessionEnded())
+        text += QStringLiteral("    已结束");
+    tab->status->setText(text);
+}
+
+void TerminalPage::openLocalSession(const QString &shell)
+{
+    auto *session = new LocalSession(shell, this);
+
+    QString error;
+    if (!session->start(80, 24, &error)) {
+        delete session;
+        emit statusMessage(QStringLiteral("打开本地终端失败：%1").arg(error));
+        return;
+    }
+
+    ++m_untitledCount;
+    Tab *tab = createTab(QStringLiteral("本地 %1").arg(m_untitledCount));
+    tab->session = session;
+    tab->view->setSession(session);
+
+    m_tabBar->setCurrentIndex(tab->index);
+    tab->view->setFocus();
+    updateStatus(tab);
+
+    // 标签页刚建出来尺寸还没定，等一轮事件循环再按真实大小调整伪控制台
+    QPointer<TerminalView> viewGuard(tab->view);
+    QPointer<TerminalSession> sessionGuard(session);
+    QMetaObject::invokeMethod(this, [viewGuard, sessionGuard] {
+        if (viewGuard && sessionGuard)
+            sessionGuard->resize(viewGuard->screen()->cols(), viewGuard->screen()->rows());
+    }, Qt::QueuedConnection);
+}
+
+QString TerminalPage::buildSshCommand(const Connection &c, const KeyStore *keys)
+{
+    QStringList parts;
+    parts << QStringLiteral("ssh");
+
+    if (c.port > 0 && c.port != 22)
+        parts << QStringLiteral("-p") << QString::number(c.port);
+
+    if (c.auth == AuthType::PublicKey && !c.keyId.isEmpty() && keys) {
+        if (const SshKey *key = keys->find(c.keyId))
+            parts << QStringLiteral("-i") << quoteArg(key->privateKeyPath);
+    }
+
+    const QString target = c.username.isEmpty()
+                               ? c.host
+                               : c.username + QLatin1Char('@') + c.host;
+    parts << quoteArg(target);
+
+    return parts.join(QLatin1Char(' '));
+}
+
+// 从一条连接记录拼出原生 SSH 的参数。
+// 返回 false 表示凭据不够（比如没存密码），调用方应该退回命令行方式。
+bool TerminalPage::buildSshOptions(const Connection &connection, SshSession::Options *options) const
+{
+    options->host = connection.host;
+    options->port = connection.port > 0 ? connection.port : 22;
+    options->username = connection.username;
+
+    if (connection.auth == AuthType::PublicKey && !connection.keyId.isEmpty() && m_keys) {
+        const SshKey *key = m_keys->find(connection.keyId);
+        if (!key)
+            return false;
+
+        // 内置 libssh2 用不了的密钥类型（ed25519 / ecdsa 之类）不走原生，
+        // 让它落到下面的系统 ssh 分支去 —— 那边什么密钥都支持。
+        if (!SshSession::supportsKeyType(key->type))
+            return false;
+
+        options->privateKeyPath = key->privateKeyPath;
+        // 同名 .pub 存在的话一起给 libssh2，省得它自己去猜路径
+        const QString pubPath = key->privateKeyPath + QStringLiteral(".pub");
+        if (QFileInfo::exists(pubPath))
+            options->publicKeyPath = pubPath;
+        options->passphrase = key->passphrase;
+        return true;
+    }
+
+    if (connection.auth == AuthType::Password && !connection.password.isEmpty()) {
+        options->password = connection.password;
+        return true;
+    }
+
+    return false;   // 没有凭据
+}
+
+void TerminalPage::openConnection(const Connection &connection)
+{
+    SshSession::Options options;
+    if (buildSshOptions(connection, &options)) {
+        openNativeSsh(connection, options);
+        return;
+    }
+
+    // 走到这儿有两种情况：没凭据，或者密钥类型内置库用不了。
+    // 后者要说明一句 —— 不然用户看到终端里冒出个 ssh，会以为自己点错了。
+    if (connection.auth == AuthType::PublicKey && m_keys) {
+        if (const SshKey *key = m_keys->find(connection.keyId); key && !SshSession::supportsKeyType(key->type)) {
+            emit statusMessage(QStringLiteral(
+                "「%1」是 %2 密钥，内置 SSH 只支持 RSA，改用系统 ssh 客户端连接")
+                .arg(key->name, key->type));
+        }
+    }
+
+    // 没存密码或没指定密钥：退回系统 ssh 客户端，让用户在终端里输。
+    // 这不是降级方案，只是「没有凭据时」的正常路径。
+    openConnectionViaCli(connection);
+}
+
+void TerminalPage::openNativeSsh(const Connection &connection, const SshSession::Options &options)
+{
+    auto *session = new SshSession(options, this);
+
+    Tab *tab = createTab(connection.name.isEmpty() ? connection.host : connection.name);
+    tab->session = session;
+    tab->view->setSession(session);
+
+    m_tabBar->setCurrentIndex(tab->index);
+    tab->view->setFocus();
+    updateStatus(tab);
+
+    // 主机密钥要用户点头，这一步在工作线程里没法弹窗，由这里接住
+    connect(session, &SshSession::hostKeyUnknown, this,
+            [this, session](const QString &fingerprint, const QString &keyType) {
+                promptForHostKey(session, fingerprint, keyType);
+            });
+
+    connect(session, &SshSession::stateChanged, this,
+            [this, tab, session](SshSession::State state, const QString &detail) {
+                updateStatus(tab);
+                if (state == SshSession::State::Ready)
+                    emit statusMessage(QStringLiteral("已连接到 %1").arg(session->description()));
+                else if (state == SshSession::State::Failed)
+                    emit statusMessage(QStringLiteral("连接失败：%1")
+                                           .arg(session->lastError()), true);
+                else if (!detail.isEmpty())
+                    emit statusMessage(detail);
+            });
+
+    QString error;
+    if (!session->start(tab->view->screen()->cols(), tab->view->screen()->rows(), &error)) {
+        emit statusMessage(QStringLiteral("连接 %1 失败：%2").arg(connection.host, error), true);
+        closeTab(tab->index);
+        return;
+    }
+
+    emit statusMessage(QStringLiteral("正在连接 %1 …").arg(connection.identity()));
+}
+
+void TerminalPage::promptForHostKey(SshSession *session, const QString &fingerprint,
+                                    const QString &keyType)
+{
+    QPointer<SshSession> guard(session);
+
+    QMessageBox box(this);
+    box.setWindowTitle(QStringLiteral("确认主机密钥"));
+    box.setIcon(QMessageBox::Question);
+    box.setText(QStringLiteral("第一次连接这台服务器，请核对它的指纹。"));
+    box.setInformativeText(
+        QStringLiteral("主机：%1\n"
+                       "类型：%2\n"
+                       "指纹：%3\n\n"
+                       "如果这个指纹和你预期的对不上（可以问服务器管理员，"
+                       "或者先在命令行里用 ssh 连一次核对），应该选择「取消」。")
+            .arg(session ? session->description() : QString(), keyType, fingerprint));
+
+    QPushButton *accept = box.addButton(QStringLiteral("信任并继续"), QMessageBox::AcceptRole);
+    box.addButton(QStringLiteral("取消"), QMessageBox::RejectRole);
+    box.setDefaultButton(accept);
+    box.exec();
+
+    const bool accepted = (box.clickedButton() == accept);
+    if (guard)
+        guard->answerHostKeyPrompt(accepted);
+
+    if (accepted)
+        emit statusMessage(QStringLiteral("已记住 %1 的主机密钥").arg(keyType));
+}
+
+void TerminalPage::openConnectionViaCli(const Connection &connection)
+{
+    const QString command = buildSshCommand(connection, m_keys);
+
+    auto *session = new LocalSession(command, this);
+    session->setProperty("connectionId", connection.id);
+
+    QString error;
+    if (!session->start(80, 24, &error)) {
+        delete session;
+        emit statusMessage(QStringLiteral("连接 %1 失败：%2").arg(connection.host, error), true);
+        return;
+    }
+
+    Tab *tab = createTab(connection.name.isEmpty() ? connection.host : connection.name);
+    tab->session = session;
+    tab->view->setSession(session);
+
+    m_tabBar->setCurrentIndex(tab->index);
+    tab->view->setFocus();
+    updateStatus(tab);
+
+    emit statusMessage(QStringLiteral("正在连接 %1 …（这条连接没有保存密码，请在终端里输入）")
+                           .arg(connection.identity()));
+
+    QPointer<TerminalView> viewGuard(tab->view);
+    QPointer<TerminalSession> sessionGuard(session);
+    QMetaObject::invokeMethod(this, [viewGuard, sessionGuard] {
+        if (viewGuard && sessionGuard)
+            sessionGuard->resize(viewGuard->screen()->cols(), viewGuard->screen()->rows());
+    }, Qt::QueuedConnection);
+}
+
+void TerminalPage::closeTab(int index)
+{
+    Tab *tab = tabAt(index);
+    if (!tab)
+        return;
+
+    m_tabs.removeOne(tab);
+
+    // 先把会话停干净，再拆界面，否则读者线程可能还在往已析构的控件发信号
+    if (tab->session) {
+        tab->view->setSession(nullptr);
+        tab->session->shutdown();
+        tab->session->deleteLater();
+    }
+
+    m_tabBar->removeTab(index);
+    tab->container->deleteLater();
+    delete tab;
+
+    // 删掉一个之后，后面标签的 index 都要往前挪
+    for (int i = 0; i < m_tabs.size(); ++i)
+        m_tabs[i]->index = m_tabBar->indexOf(m_tabs[i]->container);
+
+    // 关到最后一个就退回空状态。必须放在重排 index 之后 —— 这里是
+    // 「标签数变成 0」的唯一出口，放前面的话最后那一下还会停在标签栏上。
+    updateEmptyState();
+}
+
+} // namespace Em

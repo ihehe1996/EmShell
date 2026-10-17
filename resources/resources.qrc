@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/">
+        <file>theme/app.qss</file>
+        <file>icons/app-logo.png</file>
+        <file>apply-update.ps1</file>
+    </qresource>
+</RCC>

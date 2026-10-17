@@ -1,0 +1,31 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "调试 EmShell (MinGW gdb)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${command:cmake.launchTargetPath}",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [
+        {
+          "name": "PATH",
+          "value": "D:/Program Files/QT/6.8.3/mingw_64/bin;D:/Program Files/QT/Tools/mingw1310_64/bin;${env:PATH}"
+        }
+      ],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "D:/Program Files/QT/Tools/mingw1310_64/bin/gdb.exe",
+      "setupCommands": [
+        {
+          "description": "为 gdb 启用整齐打印",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ],
+      "visualizerFile": "c:\\Users\\bs\\AppData\\Roaming\\Code\\User\\workspaceStorage\\8e2c1df970ffb55c0142bdcdfe20e357\\tonka3000.qtvsctools\\qt.natvis.xml"
+    }
+  ]
+}
