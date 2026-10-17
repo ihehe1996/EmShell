@@ -408,7 +408,6 @@ void TerminalPage::updateStatus(Tab *tab)
     if (!tab || !tab->view)
         return;
 
-    TerminalScreen *screen = tab->view->screen();
     QString desc = tab->session ? tab->session->description() : QStringLiteral("无会话");
 
     // SSH 会话把连接阶段也显示出来，用户能看出是「卡住了」还是「在认证」
@@ -421,10 +420,7 @@ void TerminalPage::updateStatus(Tab *tab)
             desc += QStringLiteral(" · ") + QString::fromUtf8(labels[s]);
     }
 
-    QString text = QStringLiteral("%1    %2 × %3")
-                       .arg(desc)
-                       .arg(screen->cols())
-                       .arg(screen->rows());
+    QString text = desc;
     if (tab->view->sessionEnded())
         text += QStringLiteral("    已结束");
     tab->status->setText(text);
