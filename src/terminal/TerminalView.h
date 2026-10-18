@@ -130,7 +130,6 @@ private:
     qreal  m_ascent = 12.0;
 
     bool   m_sessionEnded = false;
-    int    m_exitCode = 0;
     QString m_lastTitle;
 
     // 输入法正在组的那串字（拼音串或还没选定的候选）。提交之后就空了，

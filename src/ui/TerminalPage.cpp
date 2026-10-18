@@ -551,8 +551,16 @@ void TerminalPage::openNativeSsh(const Connection &connection, const SshSession:
     // 登录并拿到 shell 之后（started 是从工作线程发的，这里是队列连接，
     // 一定排在该会话的 dataReceived 之前），在「正在连接」下面补一行成功的提示。
     // blankLineBefore=false：紧接在「正在连接」下面一行，中间不留空行。
-    connect(session, &TerminalSession::started, tab->view, [view = tab->view] {
+    connect(session, &TerminalSession::started, tab->view, [session, view = tab->view] {
         view->showNotice(QStringLiteral("连接主机成功"), false, false);
+
+        // 连接建立成功之后再挂断开提示：握手 / 认证阶段的失败已经有
+        // 「连接失败」的消息，不该在终端里再补一句「连接断开」。
+        // 这里不等到 stateChanged(Closed)：读写出错时状态停在 Failed，
+        // 但连接确实已经断了，用 exited 才盖得住两种情况。
+        connect(session, &TerminalSession::exited, view, [view](int) {
+            view->showNotice(QStringLiteral("连接断开"), false);
+        });
     });
 
     m_tabBar->setCurrentIndex(tab->index);

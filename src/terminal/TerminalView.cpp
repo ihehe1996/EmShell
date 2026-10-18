@@ -177,7 +177,6 @@ void TerminalView::setSession(TerminalSession *session)
 
     m_session = session;
     m_sessionEnded = false;
-    m_exitCode = 0;
 
     if (m_session) {
         connect(m_session, &TerminalSession::dataReceived, this, &TerminalView::onSessionData);
@@ -213,7 +212,6 @@ void TerminalView::onSessionData(const QByteArray &data)
 void TerminalView::onSessionExited(int code)
 {
     m_sessionEnded = true;
-    m_exitCode = code;
     update();
     emit sessionFinished(code);
 }
@@ -485,17 +483,6 @@ void TerminalView::paintEvent(QPaintEvent *)
             p.setPen(colors.fg);
             p.drawText(QPointF(preRect.left(), preRect.top() + m_ascent), shown);
         }
-    }
-
-    // ---- 会话已结束的提示 ----
-    if (m_sessionEnded) {
-        const QRectF banner(0, height() - 30, width(), 30);
-        p.fillRect(banner, QColor(0, 0, 0, 150));
-        p.setPen(Theme::color(QStringLiteral("text-dim")));
-        QFont f = Theme::uiFont(12);
-        p.setFont(f);
-        p.drawText(banner, Qt::AlignCenter,
-                   QStringLiteral("会话已结束（退出码 %1）").arg(m_exitCode));
     }
 }
 
