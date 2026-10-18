@@ -119,7 +119,12 @@ TerminalView::~TerminalView() = default;
 
 void TerminalView::applyFont()
 {
-    m_font = Theme::monoFont(m_fontSize);
+    // 正文用细体。Cascadia Mono 的 Regular 在深色底、整像素 hinting 下看着
+    // 偏粗；加粗（SGR 1）仍然是 Normal，两者还有一档差别。
+    //
+    // 注意不能只给 monoFont() 传 QFont::Light：Windows 把各字重枚举成独立家族，
+    // 那样选中的还是 Regular（见 Theme::monoLightFont）。
+    m_font = Theme::monoLightFont(m_fontSize);
     const QFontMetricsF fm(m_font);
     m_cellWidth  = fm.horizontalAdvance(QLatin1Char('M'));
     m_cellHeight = fm.height();

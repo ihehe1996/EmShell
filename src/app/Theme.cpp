@@ -517,6 +517,18 @@ QFont Theme::monoFont(int pixelSize, QFont::Weight weight)
     return f;
 }
 
+QFont Theme::monoLightFont(int pixelSize)
+{
+    QFont f = monoFont(pixelSize, QFont::Light);
+
+    // 整像素 hinting 会把 300 和 400 的竖笔都吸到同一个整像素宽度上，深色底
+    // 看起来一样粗。终端正文关掉 hinting，细体的差别才出得来。
+    //
+    // 代价是字缘稍微软一点；DPI 越高越不明显。
+    f.setHintingPreference(QFont::PreferNoHinting);
+    return f;
+}
+
 const QColor *Theme::ansiPalette()
 {
     return g_ansi;
