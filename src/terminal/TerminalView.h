@@ -50,6 +50,11 @@ public:
     // 把当前屏幕内容全部导出成文本
     QString dumpAllText() const;
 
+    // 在终端里先写一行提示（连接过程中用，比如「正在连接主机 …」）。
+    // 走终端自己的 SGR 序列而不是另外浮一层文字：这行会真的进缓冲区，
+    // 后面远端输出接在它下面，滚动、复制、选中都和普通输出一致。
+    void showNotice(const QString &text);
+
     // 输入法会来问这些。QWidget 里它本来就是 public，别往 protected 里挪 ——
     // 收窄了访问权限，外面（包括测试）就调不到了。
     QVariant inputMethodQuery(Qt::InputMethodQuery query) const override;

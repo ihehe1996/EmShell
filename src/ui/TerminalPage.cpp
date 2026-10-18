@@ -542,6 +542,10 @@ void TerminalPage::openNativeSsh(const Connection &connection, const SshSession:
     tab->session = session;
     tab->view->setSession(session);
 
+    // 握手 / 认证阶段终端里一个字都没有，先给一行提示。
+    // 远端一旦开始输出，这条就自然地留在上方。
+    tab->view->showNotice(QStringLiteral("正在连接主机 %1 …").arg(connection.identity()));
+
     m_tabBar->setCurrentIndex(tab->index);
     tab->view->setFocus();
     updateStatus(tab);
@@ -621,6 +625,10 @@ void TerminalPage::openConnectionViaCli(const Connection &connection)
     Tab *tab = createTab(connection.name.isEmpty() ? connection.host : connection.name);
     tab->session = session;
     tab->view->setSession(session);
+
+    // **这条路径不写「正在连接主机 …」。** 系统 ssh 客户端一启动就先发一串
+    // 隐藏光标 + 清屏 + 光标归位的控制序列，写在前面的提示会被整屏清掉；
+    // 它随后自己会输出密码提示或连接错误，终端不会空着。
 
     m_tabBar->setCurrentIndex(tab->index);
     tab->view->setFocus();

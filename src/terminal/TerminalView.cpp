@@ -677,6 +677,39 @@ QString TerminalView::dumpAllText() const
     return lines.join(QLatin1Char('\n'));
 }
 
+void TerminalView::showNotice(const QString &text)
+{
+    if (!m_screen || text.isEmpty())
+        return;
+
+    // 等一轮事件循环再写。系统 ssh 客户端启动时会先发一串「隐藏光标 + 清屏 +
+    // 光标归位」的控制序列，这些数据已经排在事件队列里了；当场写的话提示刚
+    // 落下就被那一屏清掉，看起来像没写。延后一轮正好排在它们后面。
+    QTimer::singleShot(0, this, [this, text] {
+        if (!m_screen)
+            return;
+
+        // 标签刚建出来、还没参与布局时，updateGridSize() 是按子控件的默认尺寸
+        // （100×30）算的，屏幕可能只有十来个字符宽、两行高。这个尺寸下写提示会
+        // 被折成好几行，前面的部分直接滚进回滚缓冲。先撑到一个正常尺寸；
+        // 真实布局发生以后只会把它改大，内容不会丢。
+        if (m_screen->cols() < 80 || m_screen->rows() < 24) {
+            m_screen->resize(qMax(80, m_screen->cols()),
+                             qMax(24, m_screen->rows()));
+        }
+
+        // 前面留一个空行不是手滑：连接开始时窗口底部的状态条会露出来（24px），
+        // 终端随之矮一行，屏幕会把最上面那行挤进回滚缓冲。提示正好在第一行的话
+        // 就会这样被挤走，留一行空白给它垫背。
+        //
+        // SGR 2 = 暗淡。渲染时会拿当前前景色再压暗一档，深色 / 浅色主题都适用，
+        // 不用在这里写死颜色。
+        m_screen->feed(QStringLiteral("\r\n\x1b[2m%1\x1b[0m\r\n").arg(text).toUtf8());
+        m_screen->clearDirty();
+        update();
+    });
+}
+
 // -------------------------------------------------------------- 输入 ---
 
 void TerminalView::ensureCursorVisible()
