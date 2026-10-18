@@ -219,10 +219,8 @@ TerminalPage::TerminalPage(ConnectionStore *store, KeyStore *keys, QWidget *pare
 
     connect(m_tabBar, &QTabWidget::tabCloseRequested, this, &TerminalPage::closeTab);
     connect(m_tabBar, &QTabWidget::currentChanged, this, [this](int) {
-        if (Tab *tab = currentTab()) {
+        if (Tab *tab = currentTab())
             tab->view->setFocus();
-            updateStatus(tab);
-        }
     });
 
     // 一个标签都没有的时候显示空状态，而不是一个空标签栏。
@@ -324,17 +322,6 @@ TerminalPage::Tab *TerminalPage::createTab(const QString &title)
     tab->container = new QWidget;
     tab->view = new TerminalView(tab->container);
 
-    // 状态条：会话说明 + 终端尺寸，右边显示光标位置
-    tab->status = makeLabel(QString(), "hint", tab->container);
-    auto *statusBar = new QWidget(tab->container);
-    statusBar->setObjectName(QStringLiteral("TerminalStatusBar"));
-    statusBar->setFixedHeight(26);
-
-    auto *statusLayout = new QHBoxLayout(statusBar);
-    statusLayout->setContentsMargins(12, 0, 12, 0);
-    statusLayout->addWidget(tab->status);
-    statusLayout->addStretch();
-
     auto *terminalWrap = new QWidget(tab->container);
     terminalWrap->setObjectName(QStringLiteral("TerminalWrap"));
     auto *wrapLayout = new QVBoxLayout(terminalWrap);
@@ -348,7 +335,6 @@ TerminalPage::Tab *TerminalPage::createTab(const QString &title)
     layout->setContentsMargins(0, 8, 8, 8);
     layout->setSpacing(0);
     layout->addWidget(terminalWrap);
-    layout->addWidget(statusBar);
 
     tab->index = m_tabBar->addTab(tab->container, title);
     // 标签上的字就是这个名字，之后只有 tooltip 会被会话报的标题更新
@@ -376,7 +362,6 @@ TerminalPage::Tab *TerminalPage::createTab(const QString &title)
         applyTitle(tab, t);
     });
     connect(tab->view, &TerminalView::sessionFinished, this, [this, tab](int code) {
-        updateStatus(tab);
         emit statusMessage(QStringLiteral("%1：会话结束（退出码 %2）").arg(tab->title).arg(code));
     });
 
@@ -403,29 +388,6 @@ void TerminalPage::applyTitle(Tab *tab, const QString &title)
     m_tabBar->setTabToolTip(tab->index, title);
 }
 
-void TerminalPage::updateStatus(Tab *tab)
-{
-    if (!tab || !tab->view)
-        return;
-
-    QString desc = tab->session ? tab->session->description() : QStringLiteral("无会话");
-
-    // SSH 会话把连接阶段也显示出来，用户能看出是「卡住了」还是「在认证」
-    if (auto *ssh = qobject_cast<SshSession *>(tab->session)) {
-        static const char *labels[] = {
-            "", "连接中", "握手中", "校验主机密钥", "认证中", "打开终端", "已连接", "失败", "已断开"
-        };
-        const int s = int(ssh->state());
-        if (s > 0 && s < int(sizeof(labels) / sizeof(labels[0])))
-            desc += QStringLiteral(" · ") + QString::fromUtf8(labels[s]);
-    }
-
-    QString text = desc;
-    if (tab->view->sessionEnded())
-        text += QStringLiteral("    已结束");
-    tab->status->setText(text);
-}
-
 void TerminalPage::openLocalSession(const QString &shell)
 {
     auto *session = new LocalSession(shell, this);
@@ -444,7 +406,6 @@ void TerminalPage::openLocalSession(const QString &shell)
 
     m_tabBar->setCurrentIndex(tab->index);
     tab->view->setFocus();
-    updateStatus(tab);
 
     // 标签页刚建出来尺寸还没定，等一轮事件循环再按真实大小调整伪控制台
     QPointer<TerminalView> viewGuard(tab->view);
@@ -565,7 +526,6 @@ void TerminalPage::openNativeSsh(const Connection &connection, const SshSession:
 
     m_tabBar->setCurrentIndex(tab->index);
     tab->view->setFocus();
-    updateStatus(tab);
 
     // 主机密钥要用户点头，这一步在工作线程里没法弹窗，由这里接住
     connect(session, &SshSession::hostKeyUnknown, this,
@@ -573,16 +533,22 @@ void TerminalPage::openNativeSsh(const Connection &connection, const SshSession:
                 promptForHostKey(session, fingerprint, keyType);
             });
 
+    QPointer<TerminalView> viewGuard(tab->view);
     connect(session, &SshSession::stateChanged, this,
-            [this, tab, session](SshSession::State state, const QString &detail) {
-                updateStatus(tab);
-                if (state == SshSession::State::Ready)
+            [this, session, viewGuard](SshSession::State state, const QString &detail) {
+                if (state == SshSession::State::Ready) {
                     emit statusMessage(QStringLiteral("已连接到 %1").arg(session->description()));
-                else if (state == SshSession::State::Failed)
+                } else if (state == SshSession::State::Failed) {
+                    // 底部状态条已经去掉了，错误必须写进终端，否则用户只看到
+                    // 一行「正在连接主机 …」就再也没有下文。
+                    if (viewGuard)
+                        viewGuard->showNotice(QStringLiteral("连接失败：%1")
+                                                  .arg(session->lastError()), false);
                     emit statusMessage(QStringLiteral("连接失败：%1")
                                            .arg(session->lastError()), true);
-                else if (!detail.isEmpty())
+                } else if (!detail.isEmpty()) {
                     emit statusMessage(detail);
+                }
             });
 
     QString error;
@@ -649,7 +615,6 @@ void TerminalPage::openConnectionViaCli(const Connection &connection)
 
     m_tabBar->setCurrentIndex(tab->index);
     tab->view->setFocus();
-    updateStatus(tab);
 
     emit statusMessage(QStringLiteral("正在连接 %1 …（这条连接没有保存密码，请在终端里输入）")
                            .arg(connection.identity()));

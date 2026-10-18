@@ -651,14 +651,6 @@ QMenu::separator { height: 1px; background: @border; margin: 6px 8px; }
 
 QDialog { background: @bg-app; }
 
-/* 底部状态条。原来是 MainWindow 里拼的内联样式，用了 QColor::name()，
-   rgba 的 alpha 会被丢掉；现在背景图要透上来，改由 QSS 给。 */
-#StatusBar {
-    background: @bg-statusbar;
-    border: none;
-    border-top: 1px solid @border;
-}
-
 /* 新建 / 编辑连接：无边框对话框，描边自己补（和主窗口 #Root 一个道理） */
 #DialogRoot {
     background: @bg-app;
@@ -731,7 +723,7 @@ QDialogButtonBox QPushButton:hover { background: @bg-hover; color: @text; }
 }
 
 /* 终端窗口**不要边框**：一块直接铺在页面上的终端面，
-   不套卡片、不描边。状态条也一起拍平，只留文字。 */
+   不套卡片、不描边。 */
 #TerminalWrap {
     /* 透明：底下的 TerminalView 自己会用 94% 的 term-bg 铺一遍。
        这里再铺一层同色会变成「两层 94%」，背景图等于彻底看不见了。 */
@@ -739,13 +731,6 @@ QDialogButtonBox QPushButton:hover { background: @bg-hover; color: @text; }
     border: none;
     border-radius: 0;
 }
-
-#TerminalStatusBar {
-    background: transparent;
-    border: none;
-    border-radius: 0;
-}
-#TerminalStatusBar QLabel { color: @text-mute; font-size: 12px; }
 
 QTabWidget::pane {
     border: none;

@@ -6,7 +6,6 @@
 #include <QVector>
 #include <QWidget>
 
-class QLabel;
 class QStackedWidget;
 class QTabWidget;
 
@@ -58,7 +57,6 @@ private:
         QWidget *container = nullptr;
         TerminalView *view = nullptr;
         TerminalSession *session = nullptr;
-        QLabel *status = nullptr;
         QString title;
         int index = -1;
     };
@@ -66,7 +64,6 @@ private:
     Tab *createTab(const QString &title);
     void closeTab(int index);
     void applyTitle(Tab *tab, const QString &title);
-    void updateStatus(Tab *tab);
     Tab *tabAt(int index) const;
     Tab *currentTab() const;
 

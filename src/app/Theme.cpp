@@ -79,10 +79,9 @@ const QHash<QString, QString> &lightTable()
         // 底部状态条。侧栏改用 nav-bg 之后，这个 token 就只服务状态条了，
         // 名字跟着改掉，免得以后有人以为它是侧栏的底色。
         //
-        // **凡是盖在背景图上的表面都用 rgba**（面板、输入框、状态条、标题栏…）：
+        // **凡是盖在背景图上的表面都用 rgba**（面板、输入框、标题栏…）：
         // 用户明确要求「不允许有元素彻底盖住背景图」。透明度都不高（84%~94%），
         // 没有背景图时看起来和原来的实色几乎一样。
-        { QStringLiteral("bg-statusbar"), QStringLiteral("rgba(233, 238, 250, 0.84)") },
         { QStringLiteral("bg-panel"),     QStringLiteral("rgba(255, 255, 255, 0.86)") },
         // 菜单 / 气泡 / 弹窗是独立的顶层窗口，背后不是背景图而是桌面 —— 保持实色
         { QStringLiteral("bg-elevated"),  QStringLiteral("#FFFFFF") },
@@ -183,7 +182,6 @@ const QHash<QString, QString> &darkTable()
         { QStringLiteral("bg-app"),       QStringLiteral("#12151C") },
         // 和浅色同理：所有盖在背景图上的表面都留一点透明度。
         // bg-elevated 是菜单 / 气泡 / 弹窗的底，背后是桌面不是背景图，保持实色。
-        { QStringLiteral("bg-statusbar"), QStringLiteral("rgba(29, 33, 43, 0.80)") },
         { QStringLiteral("bg-panel"),     QStringLiteral("rgba(35, 40, 51, 0.82)") },
         { QStringLiteral("bg-elevated"),  QStringLiteral("#2A303D") },
         { QStringLiteral("bg-input"),     QStringLiteral("rgba(30, 34, 44, 0.88)") },

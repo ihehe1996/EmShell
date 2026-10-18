@@ -25,7 +25,6 @@
 #include <QMenu>
 #include <QSystemTrayIcon>
 #include <QKeySequence>
-#include <QLabel>
 #include <QLineEdit>
 #include <QPainter>
 #include <QPen>
@@ -226,26 +225,7 @@ void MainWindow::buildUi()
     m_stack->addWidget(m_updatePage  = new UpdatePage());
     m_favorites->configureAsFavorites();
 
-    // 底部状态条：默认藏着，有消息时露出来，几秒后自己收回去
-    m_statusLabel = makeLabel(QString(), "hint", root);
-    m_statusBar = new QWidget(root);
-    m_statusBar->setObjectName(QStringLiteral("StatusBar"));
-    m_statusBar->setAttribute(Qt::WA_StyledBackground, true);
-    m_statusBar->setFixedHeight(24);
-    // 底色 / 上边线在 app.qss 的 #StatusBar 里。别改回内联样式：
-    // QColor::name() 会把 rgba 的 alpha 丢掉，背景图就透不上来了。
-    auto *statusLayout = new QHBoxLayout(m_statusBar);
-    statusLayout->setContentsMargins(14, 0, 14, 0);
-    statusLayout->addWidget(m_statusLabel);
-    statusLayout->addStretch();
-    m_statusBar->hide();
-
-    m_statusTimer = new QTimer(this);
-    m_statusTimer->setSingleShot(true);
-    m_statusTimer->setInterval(4500);
-    connect(m_statusTimer, &QTimer::timeout, m_statusBar, &QWidget::hide);
-
-    // 内容行（侧栏 + 页面）和标题栏、状态条一样，都是填充在 Root 上的。
+    // 内容行（侧栏 + 页面）和标题栏一样，都是填充在 Root 上的。
     // 侧栏自己会把背景压暗（见 #SideBar[glass="true"]），否则导航文字会浮在照片上。
     auto *content = new QWidget(root);
     auto *contentLayout = new QHBoxLayout(content);
@@ -272,7 +252,6 @@ void MainWindow::buildUi()
         bodyLayout->addWidget(captionStrip);
     }
     bodyLayout->addWidget(content, 1);
-    bodyLayout->addWidget(m_statusBar);
 
     auto *outer = new QVBoxLayout(root);
     outer->setContentsMargins(0, 0, 0, 0);
@@ -303,23 +282,15 @@ void MainWindow::wireSignals()
 
     // ---- 所有连接 ----
     connect(m_connections, &ConnectionsPage::connectRequested, this, &MainWindow::openConnection);
-    connect(m_connections, &ConnectionsPage::statusMessage, this,
-            [this](const QString &t) { showStatus(t); });
 
     // ---- 收藏夹 ----
     connect(m_favorites, &ConnectionsPage::connectRequested, this, &MainWindow::openConnection);
-    connect(m_favorites, &ConnectionsPage::statusMessage, this,
-            [this](const QString &t) { showStatus(t); });
 
     // ---- 分组 ----
     // 侧栏自己负责新建/编辑/排序/删除（它就拿着 store），这里只接「点开了哪个分组」
-    // 和它发出来的提示语
     connect(m_sideBar, &SideBar::groupRequested, this, &MainWindow::openGroup);
-    connect(m_sideBar, &SideBar::statusMessage, this, [this](const QString &t) { showStatus(t); });
 
     connect(m_groupPage, &ConnectionsPage::connectRequested, this, &MainWindow::openConnection);
-    connect(m_groupPage, &ConnectionsPage::statusMessage, this,
-            [this](const QString &t) { showStatus(t); });
     // 当前正开着的分组被改名 / 改色 / 删掉了
     connect(m_store, &ConnectionStore::groupsChanged, this, &MainWindow::handleGroupsChanged);
 
@@ -328,19 +299,10 @@ void MainWindow::wireSignals()
         if (m_store) {
             if (const Connection *c = m_store->find(id))
                 openConnection(*c);
-            else
-                showStatus(QStringLiteral("这条记录对应的连接已经被删掉了"), true);
         }
     });
-    connect(m_history, &HistoryPage::statusMessage, this, [this](const QString &t) { showStatus(t); });
-
-    // ---- 密钥 ----
-    connect(m_keysPage, &KeysPage::statusMessage, this, [this](const QString &t) { showStatus(t); });
 
     // ---- 终端 ----
-    connect(m_terminal, &TerminalPage::statusMessage, this,
-            [this](const QString &t, bool error) { showStatus(t, error); });
-
     // 终端页空状态里的「查看所有连接」：切页交给这里
     connect(m_terminal, &TerminalPage::browseConnectionsRequested, this,
             [this] { switchPage(AppPage::Connections); });
@@ -349,7 +311,6 @@ void MainWindow::wireSignals()
     connect(m_updatePage, &UpdatePage::checkUpdateRequested, this, &MainWindow::checkForUpdates);
 
     // ---- 设置 ----
-    connect(m_settings, &SettingsPage::statusMessage, this, [this](const QString &t) { showStatus(t); });
     connect(m_settings, &SettingsPage::backgroundChanged, this, &MainWindow::reloadBackground);
     connect(m_settings, &SettingsPage::terminalFontSizeChanged, this, [this](int) {
         // 已开的终端下次打开时生效，这里只提示，不逐个去改
@@ -499,7 +460,6 @@ void MainWindow::handleGroupsChanged()
     // 正在看的分组被删了 —— 别把用户晾在一个已经不存在（列表必然为空）的页上
     m_currentGroupId.clear();
     switchPage(AppPage::Connections);
-    showStatus(QStringLiteral("当前分组已被删除"), true);
 }
 
 void MainWindow::openConnection(const Connection &connection)
@@ -523,19 +483,6 @@ void MainWindow::editConnection(const QString &id)
 {
     switchPage(AppPage::Connections);
     m_connections->openEditConnection(id);
-}
-
-void MainWindow::showStatus(const QString &text, bool error)
-{
-    if (!m_statusBar || !m_statusLabel)
-        return;
-
-    m_statusLabel->setText(text);
-    m_statusLabel->setStyleSheet(QStringLiteral("color:%1;")
-                                     .arg(Theme::color(error ? QStringLiteral("err")
-                                                             : QStringLiteral("text-mute")).name()));
-    m_statusBar->show();
-    m_statusTimer->start();
 }
 
 // 原生标题栏改色。Win11 的 DWM 支持直接设标题栏底色 / 文字色，不需要自绘；

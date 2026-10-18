@@ -5,7 +5,6 @@
 
 #include <QWidget>
 
-class QLabel;
 class QMenu;
 class QStackedWidget;
 class QSystemTrayIcon;
@@ -67,7 +66,6 @@ private:
     void openConnection(const Connection &connection);
     void newConnection();
     void editConnection(const QString &id);
-    void showStatus(const QString &text, bool error = false);
 
     // 系统托盘。没有托盘的环境（极少数）下退化成普通窗口：关闭即退出。
     void createTrayIcon();
@@ -91,10 +89,6 @@ private:
     SettingsPage *m_settings = nullptr;
     UpdatePage *m_updatePage = nullptr;
     UpdateChecker *m_silentChecker = nullptr;
-
-    QWidget *m_statusBar = nullptr;
-    QLabel *m_statusLabel = nullptr;
-    QTimer *m_statusTimer = nullptr;
 
     QSystemTrayIcon *m_tray = nullptr;
     QMenu *m_trayMenu = nullptr;
