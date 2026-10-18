@@ -55,6 +55,14 @@ void appendCodePoint(QString &out, char32_t ch)
     }
 }
 
+// 远端 SGR 1（加粗）用什么字重画。
+//
+// 等宽字体大多没有独立的 Bold 字形（Cascadia Mono / Consolas 只有 Regular 和
+// Bold 两档），Qt 遇到 600 之类的中间值会合成「伪粗体」，笔画发糊。这里直接用
+// Normal（400）：加粗的文字仍然靠颜色提亮来区分（见 resolveColor 里的 SGR 1
+// 处理），只是不再把字形压粗。
+constexpr QFont::Weight kTerminalBoldWeight = QFont::Normal;
+
 // 两个格子的「外观」是否一定相同。
 //
 // 比的是打包值（不是解析后的颜色）：打包值一样，解析出来的颜色和字形必然
@@ -276,7 +284,7 @@ void TerminalView::paintEvent(QPaintEvent *)
     const int rows = m_screen->rows();
     const int top  = topLine();
 
-    m_font.setBold(false);
+    m_font.setWeight(QFont::Normal);
     m_font.setItalic(false);
     m_font.setUnderline(false);
 
@@ -317,7 +325,8 @@ void TerminalView::paintEvent(QPaintEvent *)
                 if (rs.bg.alpha() > 0)
                     p.fillRect(cellRect, rs.bg);
                 if (c.ch != U' ') {
-                    m_font.setBold(styleBits & CellBold);
+                    m_font.setWeight((styleBits & CellBold) ? kTerminalBoldWeight
+                                                            : QFont::Normal);
                     m_font.setItalic(styleBits & CellItalic);
                     m_font.setUnderline(styleBits & CellUnderline);
                     m_font.setStrikeOut(styleBits & CellStrike);
@@ -375,7 +384,8 @@ void TerminalView::paintEvent(QPaintEvent *)
 
             // 空白串不用画字
             if (runText.trimmed().size() > 0) {
-                m_font.setBold(rs.style & CellBold);
+                m_font.setWeight((rs.style & CellBold) ? kTerminalBoldWeight
+                                                       : QFont::Normal);
                 m_font.setItalic(rs.style & CellItalic);
                 m_font.setUnderline(rs.style & CellUnderline);
                 m_font.setStrikeOut(rs.style & CellStrike);
@@ -436,7 +446,7 @@ void TerminalView::paintEvent(QPaintEvent *)
         // 把光标底下的字用背景色重画一遍，不然会被盖住
         const QVector<Cell> &line = m_screen->lineAt(top + cy);
         if (cx < line.size() && line[cx].ch != U'\0' && line[cx].ch != U' ') {
-            m_font.setBold(false);
+            m_font.setWeight(QFont::Normal);
             m_font.setItalic(false);
             m_font.setUnderline(false);
             m_font.setStrikeOut(false);
