@@ -50,10 +50,19 @@ public:
     // 把当前屏幕内容全部导出成文本
     QString dumpAllText() const;
 
-    // 在终端里先写一行提示（连接过程中用，比如「正在连接主机 …」）。
+    // 在终端里写一行提示（连接过程中用，比如「正在连接主机 …」）。
     // 走终端自己的 SGR 序列而不是另外浮一层文字：这行会真的进缓冲区，
     // 后面远端输出接在它下面，滚动、复制、选中都和普通输出一致。
-    void showNotice(const QString &text);
+    //
+    // defer = true 时等一轮事件循环再写：系统 ssh 客户端启动时会先发一串
+    // 「隐藏光标 + 清屏 + 光标归位」，那些数据已经排在事件队列里了，当场写会被
+    // 整屏清掉。原生 SSH 在 started 之前不可能有任何远端输出，传 false 当场写，
+    // 提示之间的先后顺序才有保证。
+    //
+    // blankLineBefore 默认在提示上面留一个空行，给连接开始时状态条出现、终端
+    // 矮一行留出垫背。后续的提示（比如「连接主机成功」）要紧接着上一条写，
+    // 传 false，否则两条之间会多出一行空白。
+    void showNotice(const QString &text, bool defer = true, bool blankLineBefore = true);
 
     // 输入法会来问这些。QWidget 里它本来就是 public，别往 protected 里挪 ——
     // 收窄了访问权限，外面（包括测试）就调不到了。

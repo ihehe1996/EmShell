@@ -544,7 +544,16 @@ void TerminalPage::openNativeSsh(const Connection &connection, const SshSession:
 
     // 握手 / 认证阶段终端里一个字都没有，先给一行提示。
     // 远端一旦开始输出，这条就自然地留在上方。
-    tab->view->showNotice(QStringLiteral("正在连接主机 %1 …").arg(connection.identity()));
+    // 当场写（defer=false）：原生 SSH 在 started 之前不会有任何远端输出，这样
+    // 「正在连接 → 连接成功 → 远端输出」的先后顺序才稳。
+    tab->view->showNotice(QStringLiteral("正在连接主机 %1 …").arg(connection.identity()), false);
+
+    // 登录并拿到 shell 之后（started 是从工作线程发的，这里是队列连接，
+    // 一定排在该会话的 dataReceived 之前），在「正在连接」下面补一行成功的提示。
+    // blankLineBefore=false：紧接在「正在连接」下面一行，中间不留空行。
+    connect(session, &TerminalSession::started, tab->view, [view = tab->view] {
+        view->showNotice(QStringLiteral("连接主机成功"), false, false);
+    });
 
     m_tabBar->setCurrentIndex(tab->index);
     tab->view->setFocus();

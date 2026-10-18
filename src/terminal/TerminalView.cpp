@@ -677,15 +677,12 @@ QString TerminalView::dumpAllText() const
     return lines.join(QLatin1Char('\n'));
 }
 
-void TerminalView::showNotice(const QString &text)
+void TerminalView::showNotice(const QString &text, bool defer, bool blankLineBefore)
 {
     if (!m_screen || text.isEmpty())
         return;
 
-    // 等一轮事件循环再写。系统 ssh 客户端启动时会先发一串「隐藏光标 + 清屏 +
-    // 光标归位」的控制序列，这些数据已经排在事件队列里了；当场写的话提示刚
-    // 落下就被那一屏清掉，看起来像没写。延后一轮正好排在它们后面。
-    QTimer::singleShot(0, this, [this, text] {
+    auto write = [this, text, blankLineBefore] {
         if (!m_screen)
             return;
 
@@ -698,16 +695,29 @@ void TerminalView::showNotice(const QString &text)
                              qMax(24, m_screen->rows()));
         }
 
-        // 前面留一个空行不是手滑：连接开始时窗口底部的状态条会露出来（24px），
-        // 终端随之矮一行，屏幕会把最上面那行挤进回滚缓冲。提示正好在第一行的话
-        // 就会这样被挤走，留一行空白给它垫背。
+        // 第一条提示前面留一个空行不是手滑：连接开始时窗口底部的状态条会露出来
+        // （24px），终端随之矮一行，屏幕会把最上面那行挤进回滚缓冲。提示正好在
+        // 第一行的话就会这样被挤走，留一行空白给它垫背。
+        //
+        // 后续提示紧接上一条写（blankLineBefore=false）：上一条已经用 \r\n 收尾，
+        // 光标就在新行行首，这里再补一个 \r\n 会在两条之间空出一整行。
         //
         // SGR 2 = 暗淡。渲染时会拿当前前景色再压暗一档，深色 / 浅色主题都适用，
         // 不用在这里写死颜色。
-        m_screen->feed(QStringLiteral("\r\n\x1b[2m%1\x1b[0m\r\n").arg(text).toUtf8());
+        const QString line = QStringLiteral("\x1b[2m%1\x1b[0m\r\n").arg(text);
+        m_screen->feed(((blankLineBefore ? QStringLiteral("\r\n") : QString()) + line).toUtf8());
         m_screen->clearDirty();
         update();
-    });
+    };
+
+    // 延后一轮是给系统 ssh 客户端那条路径留的：它一启动就先发一串「隐藏光标 +
+    // 清屏 + 光标归位」，那些数据已经排在事件队列里了；当场写的话提示刚落下就被
+    // 那一屏清掉，看起来像没写。原生 SSH 在 started 之前不会有远端输出，直接写
+    // 才能保证「正在连接 → 连接成功」的先后顺序。
+    if (defer)
+        QTimer::singleShot(0, this, write);
+    else
+        write();
 }
 
 // -------------------------------------------------------------- 输入 ---
