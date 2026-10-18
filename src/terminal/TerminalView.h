@@ -59,9 +59,9 @@ public:
     // 整屏清掉。原生 SSH 在 started 之前不可能有任何远端输出，传 false 当场写，
     // 提示之间的先后顺序才有保证。
     //
-    // blankLineBefore 默认在提示上面留一个空行，给连接开始时状态条出现、终端
-    // 矮一行留出垫背。后续的提示（比如「连接主机成功」）要紧接着上一条写，
-    // 传 false，否则两条之间会多出一行空白。
+    // blankLineBefore 默认在提示上面留一个空行。异步提示（连接失败 / 断开）是
+    // 插在远端输出中间的，光标可能停在提示符后面，先换行才不会和上一行粘连。
+    // 连接开始时那几条要紧接着写，传 false（终端此时是空的，光标本来就在行首）。
     void showNotice(const QString &text, bool defer = true, bool blankLineBefore = true);
 
     // 输入法会来问这些。QWidget 里它本来就是 public，别往 protected 里挪 ——

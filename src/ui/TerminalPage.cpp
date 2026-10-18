@@ -507,7 +507,9 @@ void TerminalPage::openNativeSsh(const Connection &connection, const SshSession:
     // 远端一旦开始输出，这条就自然地留在上方。
     // 当场写（defer=false）：原生 SSH 在 started 之前不会有任何远端输出，这样
     // 「正在连接 → 连接成功 → 远端输出」的先后顺序才稳。
-    tab->view->showNotice(QStringLiteral("正在连接主机 %1 …").arg(connection.identity()), false);
+    // 上面不留空行（blankLineBefore=false）：此时终端还是空的，光标就在行首。
+    tab->view->showNotice(QStringLiteral("正在连接主机 %1").arg(connection.identity()),
+                          false, false);
 
     // 登录并拿到 shell 之后（started 是从工作线程发的，这里是队列连接，
     // 一定排在该会话的 dataReceived 之前），在「正在连接」下面补一行成功的提示。
