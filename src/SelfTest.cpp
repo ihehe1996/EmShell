@@ -144,6 +144,15 @@ int runParserTest()
               s.lineText(0));
     }
     {
+        // 启动时 TerminalView 会先按默认小尺寸缩一次网格，再随布局涨回来。
+        // 缩掉的那些空白行不能进回滚缓冲，否则往上滚会看到一大片空屏。
+        TerminalScreen s(80, 24);
+        s.resize(12, 2);
+        s.resize(139, 48);
+        check(s.scrollbackCount() == 0, QStringLiteral("缩小窗口不把空白行推进回滚缓冲"),
+              QStringLiteral("count=%1").arg(s.scrollbackCount()));
+    }
+    {
         TerminalScreen s(10, 6);
         s.feed("a\r\nb\r\nc\r\nd\r\ne\r\nf");
         s.feed("\x1b[2;4r");      // 只滚第 2 到第 4 行

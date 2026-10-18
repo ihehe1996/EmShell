@@ -198,12 +198,20 @@ void TerminalScreen::resize(int cols, int rows)
     if (cols == m_cols && rows == m_rows)
         return;
 
-    // 行数变少时，把顶部挤出去的行推进回滚缓冲，别把内容弄丢
+    // 行数变少时，把顶部挤出去的行推进回滚缓冲，别把内容弄丢。
+    //
+    // 但**全默认的空行不推**。TerminalView 在真正布局之前会先按子控件的默认
+    // 尺寸算一次网格（100×30，只有两行高），把初始的 80×24 缩下去；等布局
+    // 发生后再涨回来。这些空白行一旦进了回滚缓冲，用户往上滚就会看到一大片
+    // 莫名其妙的空屏 —— 而它们本来就没有任何信息量。
     if (rows < m_rows) {
         const int drop = m_rows - rows;
         for (int i = 0; i < drop && !m_screen.isEmpty(); ++i) {
-            if (!m_usingAlt)
-                pushScrollback(m_screen.first());
+            const QVector<Cell> &top = m_screen.first();
+            const bool blank = std::all_of(top.cbegin(), top.cend(),
+                                           [](const Cell &c) { return c.isBlank(); });
+            if (!m_usingAlt && !blank)
+                pushScrollback(top);
             m_screen.removeFirst();
         }
         m_cursorY -= drop;
