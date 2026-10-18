@@ -100,6 +100,11 @@ private:
     QMenu *m_trayMenu = nullptr;
     bool m_quitRequested = false;   // 托盘菜单点了「退出」，closeEvent 别再藏窗口
     bool m_trayHintShown = false;   // 「已最小化到托盘」只提示一次
+
+    // 最大化窗口按住标题栏拖动的手动处理（原因见 MainWindow.cpp 的 nativeEvent）。
+    // 按下时先记住位置并捕获鼠标，等光标真的动了再还原窗口，避免单击也把窗口还原掉。
+    bool m_captionPressPending = false;
+    QPoint m_captionPressPos;
 };
 
 } // namespace Em

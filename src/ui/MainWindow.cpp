@@ -660,12 +660,99 @@ void MainWindow::closeEvent(QCloseEvent *event)
 // 边框 / 标题栏 / 客户区，系统就会自动帮我们做完剩下的：拖动、双击最大化、
 // 边缘缩放、贴边吸附、多显示器 DPI 处理。
 // ---------------------------------------------------------------------------
+
+namespace {
+
+// SC_DRAGMOVE：让系统进入「按住鼠标移动窗口」的循环。SDK 里没有这个宏，
+// 数值见 WinUser.h 的 SC_ 系列（0xF012）。
+constexpr WPARAM kScDragMove = 0xF012;
+
+// 最大化窗口被按住标题栏拖动时，DefWindowProc 会先把窗口还原、再跟着光标走 ——
+// 但这套逻辑只对带 WS_CAPTION 的普通窗口生效。我们是 WS_POPUP 的无边框窗口，
+// 结果就是「最大化时按标题栏完全拖不动」（还原成普通大小以后又正常，所以看起来
+// 时好时坏）。这里在光标确实开始移动之后手动补上这一步：按光标在最大化窗口里的
+// 横向比例还原、把标题栏贴到光标下面，再把后续拖动交还给系统（贴边吸附、
+// 多显示器这些行为都不会丢）。
+void beginMoveFromMaximized(HWND hwnd, const QPoint &cursor, int captionHeight)
+{
+    RECT maximizedRect{};
+    ::GetWindowRect(hwnd, &maximizedRect);
+    const int maximizedWidth = qMax(1, int(maximizedRect.right - maximizedRect.left));
+    const qreal fx = qreal(cursor.x() - maximizedRect.left) / maximizedWidth;
+
+    ::ShowWindow(hwnd, SW_RESTORE);
+
+    RECT normalRect{};
+    ::GetWindowRect(hwnd, &normalRect);
+    const int normalWidth = qMax(1, int(normalRect.right - normalRect.left));
+
+    int x = cursor.x() - qRound(fx * normalWidth);
+    int y = cursor.y() - captionHeight / 2;
+
+    // 从屏幕边缘按下去时，别把还原后的窗口甩到工作区外面
+    MONITORINFO info{};
+    info.cbSize = sizeof(info);
+    POINT point{};
+    point.x = cursor.x();
+    point.y = cursor.y();
+    if (::GetMonitorInfoW(::MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST), &info)) {
+        x = qBound(int(info.rcWork.left) - normalWidth + 160, x, int(info.rcWork.right) - 160);
+        y = qBound(int(info.rcWork.top), y, int(info.rcWork.bottom) - captionHeight);
+    }
+
+    ::SetWindowPos(hwnd, nullptr, x, y, 0, 0,
+                   SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    ::SendMessageW(hwnd, WM_SYSCOMMAND, kScDragMove, 0);
+}
+
+} // namespace
+
 bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
 {
     // 这整套只在无边框模式下需要。用原生窗口时系统自己会处理边框和标题栏，
     // 我们再插手反而会把拖动和缩放搞坏。
     if (kUseCustomTitleBar && eventType == QByteArrayLiteral("windows_generic_MSG")) {
         auto *msg = static_cast<MSG *>(message);
+
+        // 最大化时按住标题栏拖动：WS_POPUP 的无边框窗口不会自己「先还原再移动」，
+        // 这里手动补上（原因见 beginMoveFromMaximized 上面那段）。先捕获鼠标、
+        // 记住按下的位置；光标真的动了才还原 —— 纯单击标题栏不应该把窗口还原掉。
+        if (msg->message == WM_NCLBUTTONDOWN && int(msg->wParam) == HTCAPTION
+            && ::IsZoomed(msg->hwnd)) {
+            m_captionPressPending = true;
+            m_captionPressPos = QPoint(int(short(LOWORD(msg->lParam))),
+                                       int(short(HIWORD(msg->lParam))));
+            ::SetCapture(msg->hwnd);
+            *result = 0;
+            return true;
+        }
+
+        if (m_captionPressPending) {
+            if (msg->message == WM_MOUSEMOVE || msg->message == WM_NCMOUSEMOVE) {
+                POINT cursor{};
+                ::GetCursorPos(&cursor);
+                // 用系统自己的拖拽阈值，手抖一两个像素不算拖动
+                if (qAbs(int(cursor.x) - m_captionPressPos.x()) > ::GetSystemMetrics(SM_CXDRAG)
+                    || qAbs(int(cursor.y) - m_captionPressPos.y())
+                           > ::GetSystemMetrics(SM_CYDRAG)) {
+                    m_captionPressPending = false;
+                    ::ReleaseCapture();
+                    beginMoveFromMaximized(
+                        msg->hwnd, QPoint(int(cursor.x), int(cursor.y)),
+                        qRound((m_titleBar ? m_titleBar->height() : 42) * devicePixelRatioF()));
+                    *result = 0;
+                    return true;
+                }
+            } else if (msg->message == WM_LBUTTONUP || msg->message == WM_NCLBUTTONUP) {
+                // 单击松手：什么都不做，窗口保持最大化
+                m_captionPressPending = false;
+                ::ReleaseCapture();
+                *result = 0;
+                return true;
+            } else if (msg->message == WM_CAPTURECHANGED) {
+                m_captionPressPending = false;
+            }
+        }
 
         if (msg->message == WM_NCHITTEST) {
             // lParam 里是屏幕坐标，用 short 截断才能正确处理多显示器的负坐标。
