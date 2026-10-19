@@ -60,9 +60,20 @@ void ConnectionStore::load()
     for (const QJsonValue &v : root.value(QStringLiteral("groups")).toArray())
         m_groups << ConnectionGroup::fromJson(v.toObject());
 
+    // 历史里每个连接只留一条（最新那条）。老版本的文件里同一个连接可能被记了
+    // 很多遍，读进来时顺手去重，不然「最近使用」页会排出一长串重复行。
+    // 文件里的顺序就是新的在前，所以保留先遇到的那条即可。
     m_history.clear();
-    for (const QJsonValue &v : root.value(QStringLiteral("history")).toArray())
-        m_history << HistoryEntry::fromJson(v.toObject());
+    QSet<QString> seenHistory;
+    for (const QJsonValue &v : root.value(QStringLiteral("history")).toArray()) {
+        const HistoryEntry entry = HistoryEntry::fromJson(v.toObject());
+        if (!entry.connectionId.isEmpty()) {
+            if (seenHistory.contains(entry.connectionId))
+                continue;
+            seenHistory.insert(entry.connectionId);
+        }
+        m_history << entry;
+    }
 
     emit connectionsChanged();
     emit groupsChanged();
@@ -209,6 +220,13 @@ void ConnectionStore::recordUse(const QString &id, bool ok)
     h.username     = c->username;
     h.at           = c->lastUsedAt;
     h.ok           = ok;
+
+    // 同一个连接在历史里只占一行：把旧的摘掉，用最新时间重新放到最前面。
+    // 记录的是「最近一次使用」，不是每次连接的流水账。
+    for (int i = m_history.size() - 1; i >= 0; --i) {
+        if (m_history.at(i).connectionId == h.connectionId)
+            m_history.removeAt(i);
+    }
     m_history.prepend(h);
 
     while (m_history.size() > kMaxHistory)
@@ -304,21 +322,6 @@ void ConnectionStore::removeGroup(const QString &id, bool deleteConnections)
 }
 
 // ---------------------------------------------------------------- 历史 ---
-
-QVector<HistoryEntry> ConnectionStore::recentDistinct(int limit) const
-{
-    QVector<HistoryEntry> out;
-    QSet<QString> seen;
-    for (const HistoryEntry &h : m_history) {
-        if (seen.contains(h.connectionId))
-            continue;
-        seen.insert(h.connectionId);
-        out << h;
-        if (out.size() >= limit)
-            break;
-    }
-    return out;
-}
 
 void ConnectionStore::clearHistory()
 {

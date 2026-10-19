@@ -51,8 +51,8 @@ public:
     void removeGroup(const QString &id, bool deleteConnections = false);
 
     // ---- 历史 ----
+    // 每个连接只保留最近一次使用的一条，按时间从新到旧排列。
     const QVector<HistoryEntry> &history() const { return m_history; }
-    QVector<HistoryEntry> recentDistinct(int limit = 8) const;
     void clearHistory();
 
 signals:
