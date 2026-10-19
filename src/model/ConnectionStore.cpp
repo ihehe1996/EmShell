@@ -331,15 +331,15 @@ void ConnectionStore::seedDefaultGroups()
     // 只给分组，不给连接：新装的程序打开「所有连接」还是空的，
     // 但侧栏已经有两个能直接往里放东西的常用分组。
     // 颜色取的是 GroupDialog 色板里的前两个中间调（模型层不引 UI 头文件）。
-    ConnectionGroup dev(QStringLiteral("开发环境"));
-    dev.color = QStringLiteral("#4F8CFF");
-    dev.order = 0;
+    ConnectionGroup prod(QStringLiteral("生产环境"));
+    prod.color = QStringLiteral("#4F8CFF");
+    prod.order = 0;
 
     ConnectionGroup test(QStringLiteral("测试环境"));
     test.color = QStringLiteral("#9B6BE8");
     test.order = 1;
 
-    m_groups << dev << test;
+    m_groups << prod << test;
 }
 
 // ---------------------------------------------------------------- 历史 ---
