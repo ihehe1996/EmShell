@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(EmShell VERSION 1.0.1 LANGUAGES C CXX)
+project(EmShell VERSION 1.0.2 LANGUAGES C CXX)
 
 # Windows 资源脚本（exe 的图标）需要 RC 编译器（MinGW 下是 windres）
 if(WIN32)
