@@ -50,9 +50,9 @@ public:
     // 等宽字体，终端和 IP/端口这类技术信息用它
     static QFont monoFont(int pixelSize = 13, QFont::Weight weight = QFont::Normal);
 
-    // 等宽细体。终端正文用它 —— Regular 在深色底上偏粗。
-    // 内部关掉了 hinting，否则 Light 和 Normal 在小字号下会被吸成一样的笔画宽度。
-    static QFont monoLightFont(int pixelSize = 14);
+    // 终端正文用的等宽字体（Consolas + 关 hinting）。
+    // 不能用 uiFont：终端按等宽格子排版，比例字体会让列对不齐。
+    static QFont terminalFont(int pixelSize = 14);
 
     // 终端里的 16 色 ANSI 调色板，索引 0-15
     static const QColor *ansiPalette();

@@ -48,6 +48,7 @@ protected:
     // 无边框对话框：在头部和空白处按住左键可以拖动窗口。
     // 字段（QLineEdit 等）会自己吃掉鼠标事件，所以在输入框上拖不会挪窗口。
     void mousePressEvent(QMouseEvent *event) override;
+    void showEvent(QShowEvent *event) override;
 
 private:
     ConnectionDialog(ConnectionStore *store, KeyStore *keys, QWidget *parent);
@@ -59,6 +60,7 @@ private:
     QLabel *m_title = nullptr;
     QLabel *m_subtitle = nullptr;
     Connection m_result;
+    bool m_dwmApplied = false;
 };
 
 } // namespace Em

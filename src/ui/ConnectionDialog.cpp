@@ -38,11 +38,13 @@ ConnectionDialog::ConnectionDialog(ConnectionStore *store, KeyStore *keys, QWidg
     setSizeGripEnabled(false);
     setMinimumWidth(560);
 
-    // 无边框窗口在 Win11 上默认丢掉圆角，这里显式要回来。
-    // 必须在有原生句柄之后调，winId() 会顺手把它建出来。
-    const HWND hwnd = reinterpret_cast<HWND>(winId());
-    DwmSetWindowAttribute(hwnd, kDwmWindowCornerPreference,
-                          &kDwmCornerRound, sizeof(kDwmCornerRound));
+    // 无边框窗口的圆角在 Win11 上默认会丢，要显式设 DwmSetWindowAttribute。
+    // **但不能在这个构造函数里调 winId()** —— 此时对话框还没显示，QWidget 树里
+    // 又挂在某个页面控件底下，先建原生句柄会让 Qt 沿着控件树给兄弟控件一路补建
+    // 原生窗口，主窗口被切成一堆原生子窗口之后 WM_NCHITTEST 就到不了 MainWindow
+    // 了 —— 表现是「开过一次对话框再关掉，标题栏就再也拖不动」。
+    // 所以放到 showEvent 里，那时窗口已经由正常的 show 流程建好，winId() 只是
+    // 取回已有的句柄（见 showEvent）。
 
     m_form = new ConnectionFormPanel(store, keys, this);
     // 面板自己那套「标题 + 收起按钮」是给抽屉用的，弹窗里有自己的头部
@@ -115,6 +117,21 @@ void ConnectionDialog::setHeader(const QString &title, const QString &subtitle)
     m_title->setText(title);
     m_subtitle->setText(subtitle);
     m_subtitle->setVisible(!subtitle.isEmpty());
+}
+
+void ConnectionDialog::showEvent(QShowEvent *event)
+{
+    QDialog::showEvent(event);
+
+    // Win11 的无边框窗口默认没有圆角，这里要回来（原因见构造函数）。
+    // 放在这里而不是构造函数里，是为了避开「提前 winId() 把主窗口整棵树
+    // 原生化」那个坑 —— 此刻句柄已经由 show 流程建好了，winId() 只是取回它。
+    if (!m_dwmApplied) {
+        m_dwmApplied = true;
+        const HWND hwnd = reinterpret_cast<HWND>(winId());
+        DwmSetWindowAttribute(hwnd, kDwmWindowCornerPreference,
+                              &kDwmCornerRound, sizeof(kDwmCornerRound));
+    }
 }
 
 void ConnectionDialog::mousePressEvent(QMouseEvent *event)

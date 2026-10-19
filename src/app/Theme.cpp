@@ -517,14 +517,23 @@ QFont Theme::monoFont(int pixelSize, QFont::Weight weight)
     return f;
 }
 
-QFont Theme::monoLightFont(int pixelSize)
+QFont Theme::terminalFont(int pixelSize)
 {
-    QFont f = monoFont(pixelSize, QFont::Light);
-
-    // 整像素 hinting 会把 300 和 400 的竖笔都吸到同一个整像素宽度上，深色底
-    // 看起来一样粗。终端正文关掉 hinting，细体的差别才出得来。
+    // 终端正文用 Consolas：它比 Cascadia Mono 的 Regular 细一档，观感更接近
+    // 界面其他地方的文字。Cascadia 在这个字号下看着偏粗，而 Qt 在 Windows 上
+    // 把它的 Light/ExtraLight 都匹配成同一个字面（改 weight 没有效果）。
     //
-    // 代价是字缘稍微软一点；DPI 越高越不明显。
+    // **不能用 uiFont**：TerminalView 是按等宽格子画的，比例字体放进去列会全歪。
+    static const bool hasConsolas =
+        QFontDatabase::families().contains(QStringLiteral("Consolas"), Qt::CaseInsensitive);
+    if (!hasConsolas)
+        return monoFont(pixelSize);
+
+    QFont f(QStringLiteral("Consolas"));
+    f.setPixelSize(pixelSize);
+    f.setStyleHint(QFont::Monospace);
+    f.setFixedPitch(true);
+    // 整像素 hinting 会把细笔画补粗；终端里关掉，字缘也更干净。
     f.setHintingPreference(QFont::PreferNoHinting);
     return f;
 }
