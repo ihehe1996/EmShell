@@ -20,6 +20,8 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include <memory>
+
 namespace Em {
 
 namespace {
@@ -514,7 +516,14 @@ void TerminalPage::openNativeSsh(const Connection &connection, const SshSession:
     // 登录并拿到 shell 之后（started 是从工作线程发的，这里是队列连接，
     // 一定排在该会话的 dataReceived 之前），在「正在连接」下面补一行成功的提示。
     // blankLineBefore=false：紧接在「正在连接」下面一行，中间不留空行。
-    connect(session, &TerminalSession::started, tab->view, [session, view = tab->view] {
+    //
+    // started 也决定「连接失败」要不要先空一行：握手 / 认证阶段失败时终端里
+    // 只有上面那行「正在连接」，提示应该紧贴着它；连上以后的读写错误则插在
+    // 远端输出中间，光标可能停在提示符后面，才需要先换行。
+    auto started = std::make_shared<bool>(false);
+    connect(session, &TerminalSession::started, tab->view,
+            [session, view = tab->view, started] {
+        *started = true;
         view->showNotice(QStringLiteral("连接主机成功"), false, false);
 
         // 连接建立成功之后再挂断开提示：握手 / 认证阶段的失败已经有
@@ -537,15 +546,19 @@ void TerminalPage::openNativeSsh(const Connection &connection, const SshSession:
 
     QPointer<TerminalView> viewGuard(tab->view);
     connect(session, &SshSession::stateChanged, this,
-            [this, session, viewGuard](SshSession::State state, const QString &detail) {
+            [this, session, viewGuard, started](SshSession::State state,
+                                                 const QString &detail) {
                 if (state == SshSession::State::Ready) {
                     emit statusMessage(QStringLiteral("已连接到 %1").arg(session->description()));
                 } else if (state == SshSession::State::Failed) {
                     // 底部状态条已经去掉了，错误必须写进终端，否则用户只看到
                     // 一行「正在连接主机 …」就再也没有下文。
+                    // 握手 / 认证阶段失败紧贴着「正在连接」写，中间别空一行；
+                    // 已经连上之后的读写错误才需要和远端输出隔开（见 started）。
                     if (viewGuard)
                         viewGuard->showNotice(QStringLiteral("连接失败：%1")
-                                                  .arg(session->lastError()), false);
+                                                  .arg(session->lastError()),
+                                              false, *started);
                     emit statusMessage(QStringLiteral("连接失败：%1")
                                            .arg(session->lastError()), true);
                 } else if (!detail.isEmpty()) {
