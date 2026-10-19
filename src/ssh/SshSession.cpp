@@ -4,6 +4,7 @@
 #include <QFileInfo>
 #include <QMetaObject>
 #include <QStandardPaths>
+#include <QTimer>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #  define WIN32_LEAN_AND_MEAN
@@ -215,7 +216,11 @@ bool SshSession::start(int cols, int rows, QString *errorOut)
     }
 
     m_running = true;
-    m_worker = std::thread([this] { workerMain(); });
+    m_workerDone = false;
+    m_worker = std::thread([this] {
+        workerMain();
+        m_workerDone = true;   // 必须放在 workerMain 的所有 emit 之后
+    });
     return true;
 }
 
@@ -227,7 +232,10 @@ void SshSession::workerMain()
 
     if (!connectSocket(&error) || !doHandshake(&error) || !verifyHostKey(&error)
         || !authenticate(&error) || !openShell(&error)) {
-        setError(error);
+        // 用户主动关标签 / 退出时别再把「连接已取消」当成错误播出去：
+        // 界面已经拆了，再弹一条「连接失败」只会莫名其妙。
+        if (!m_stopRequested.load())
+            setError(error);
         cleanup();
         m_running = false;
         emit exited(-1);
@@ -363,6 +371,12 @@ bool SshSession::connectSocket(QString *errorOut)
 
     // 一个域名可能解析出多个地址（IPv4/IPv6），挨个试
     for (struct addrinfo *ai = result; ai; ai = ai->ai_next) {
+        if (m_stopRequested.load()) {
+            ::freeaddrinfo(result);
+            *errorOut = QStringLiteral("连接已取消");
+            return false;
+        }
+
         SOCKET s = ::socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
         if (s == INVALID_SOCKET)
             continue;
@@ -374,15 +388,38 @@ bool SshSession::connectSocket(QString *errorOut)
 
         int rc = ::connect(s, ai->ai_addr, int(ai->ai_addrlen));
         if (rc == SOCKET_ERROR && ::WSAGetLastError() == WSAEWOULDBLOCK) {
-            fd_set writeSet;
-            FD_ZERO(&writeSet);
-            FD_SET(s, &writeSet);
+            // 超时按小段切，每段回来看看是不是已经有人叫停。
+            // 一整段 20 秒的 select 虽然能等到超时，但用户在这期间关标签
+            // 就得跟着干等 —— shutdown() 叫不醒一段已经在等的 select。
+            bool connected = false;
+            int remainingMs = m_options.connectTimeoutMs;
+            while (remainingMs > 0 && !m_stopRequested.load()) {
+                const int sliceMs = qMin(200, remainingMs);
+                fd_set writeSet;
+                FD_ZERO(&writeSet);
+                FD_SET(s, &writeSet);
 
-            timeval tv{};
-            tv.tv_sec = m_options.connectTimeoutMs / 1000;
-            tv.tv_usec = (m_options.connectTimeoutMs % 1000) * 1000;
+                timeval tv{};
+                tv.tv_sec = 0;
+                tv.tv_usec = sliceMs * 1000;
 
-            if (::select(0, nullptr, &writeSet, nullptr, &tv) <= 0) {
+                const int ready = ::select(0, nullptr, &writeSet, nullptr, &tv);
+                if (ready > 0) {
+                    connected = true;
+                    break;
+                }
+                if (ready == SOCKET_ERROR)
+                    break;
+                remainingMs -= sliceMs;
+            }
+
+            if (m_stopRequested.load()) {
+                ::closesocket(s);
+                ::freeaddrinfo(result);
+                *errorOut = QStringLiteral("连接已取消");
+                return false;
+            }
+            if (!connected) {
                 ::closesocket(s);
                 continue;   // 超时，试下一个地址
             }
@@ -403,8 +440,9 @@ bool SshSession::connectSocket(QString *errorOut)
         u_long blocking = 0;
         ::ioctlsocket(s, FIONBIO, &blocking);
 
-        // 握手和认证阶段用的是 libssh2 的阻塞模式，得给 socket 设收发超时，
-        // 否则遇到不吭声的服务器会把工作线程永久挂住，连 shutdown() 都返回不了。
+        // 握手和认证阶段用的是 libssh2 的阻塞模式，给 socket 设收发超时兜底。
+        // 注意：它只约束最终的 recv/send，**不会**让 libssh2 内部的 select()
+        // 超时 —— 真正决定握手 / 认证等多久的是 api_timeout（见 doHandshake）。
         // 建好 shell 切成非阻塞之后这两个超时会取消掉。
         const DWORD timeoutMs = DWORD(m_options.connectTimeoutMs);
         ::setsockopt(s, SOL_SOCKET, SO_RCVTIMEO,
@@ -433,6 +471,12 @@ bool SshSession::doHandshake(QString *errorOut)
         return false;
     }
     m_session = session;
+
+    // 阻塞模式下的总超时。connectSocket 里设的 SO_RCVTIMEO 管不到这里 ——
+    // libssh2 是「先 select 再 read」，SO_RCVTIMEO 只约束 read，不会让 select 超时。
+    // 服务器接了 TCP 却不回 SSH 报文时，握手 / 认证会一直等下去，工作线程
+    // 永远收不了工（会话对象也就永远删不掉）。必须设 libssh2 自己的超时。
+    libssh2_session_set_timeout(session, m_options.connectTimeoutMs);
 
     // 主机密钥算法按「和 OpenSSH 一致的顺序」来排。
     //
@@ -719,14 +763,11 @@ void SshSession::cleanup()
     }
 }
 
-void SshSession::shutdown()
+// 只叫停，不等线程。两个 shutdown 变体共用。
+void SshSession::requestStop()
 {
-    if (m_stopRequested.exchange(true)) {
-        // 已经有人叫停了，但线程可能还没收工，等它一下
-        if (m_worker.joinable())
-            m_worker.join();
+    if (m_stopRequested.exchange(true))
         return;
-    }
 
     // 把可能还在等用户确认主机密钥的工作线程叫醒，别让它一直挂着
     {
@@ -734,10 +775,50 @@ void SshSession::shutdown()
         m_promptCondition.wakeAll();
     }
 
+    // 注意：这里**不能**靠 ::shutdown(socket) 去叫醒工作线程。Windows 上
+    // 另一个线程正卡在 select() 里时，本地对同一个 socket 调 shutdown()
+    // 并不会让它返回（实测 select 会一直等到自己的超时）。阻塞阶段的退出
+    // 只能靠 libssh2 的 api_timeout（见 doHandshake）和 connectSocket 里
+    // 的分片 select —— 所以「别在界面线程里 join」才是关键，见 shutdownAsync()。
+}
+
+void SshSession::shutdown()
+{
+    requestStop();
+
     if (m_worker.joinable())
         m_worker.join();
 
     m_running = false;
+}
+
+void SshSession::shutdownAsync()
+{
+    requestStop();
+
+    // 没起过线程，或者已经收工了：不必等，直接删
+    if (!m_worker.joinable() || m_workerDone.load()) {
+        if (m_worker.joinable())
+            m_worker.join();
+        deleteLater();
+        return;
+    }
+
+    // 工作线程可能正卡在 libssh2 的阻塞握手 / 认证里（服务器接了 TCP 却不
+    // 回 SSH 报文时最长要等 connectTimeoutMs）。join 放在界面线程上就是
+    // 「点标签的 ✕ 之后整个窗口未响应」，所以改成轮询：线程一收工就 join
+    // （此刻已经返回，不会阻塞）并删掉自己。
+    auto *timer = new QTimer(this);
+    timer->setInterval(50);
+    connect(timer, &QTimer::timeout, this, [this, timer] {
+        if (!m_workerDone.load())
+            return;
+        timer->stop();
+        if (m_worker.joinable())
+            m_worker.join();
+        deleteLater();
+    });
+    timer->start();
 }
 
 // -------------------------------------------------------------- 输入 ---

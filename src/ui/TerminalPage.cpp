@@ -652,9 +652,21 @@ void TerminalPage::closeTab(int index)
 
     // 先把会话停干净，再拆界面，否则读者线程可能还在往已析构的控件发信号
     if (tab->session) {
+        TerminalSession *session = tab->session;
         tab->view->setSession(nullptr);
-        tab->session->shutdown();
-        tab->session->deleteLater();
+        // 关掉的标签不该再收到这个会话的状态 / 失败提示
+        session->disconnect(this);
+
+        // SSH 的工作线程可能正卡在阻塞的握手 / 认证里（服务器接了 TCP 却不
+        // 回包时要等到 api_timeout）。在这里 join 会把界面线程一起堵住 ——
+        // 表现是点标签的 ✕ 之后窗口「未响应」。交给它自己收工后再删。
+        // 本地终端的 shutdown 是同步的，而且关掉伪控制台后读者线程立刻就退了。
+        if (auto *ssh = qobject_cast<SshSession *>(session))
+            ssh->shutdownAsync();
+        else {
+            session->shutdown();
+            session->deleteLater();
+        }
     }
 
     m_tabBar->removeTab(index);

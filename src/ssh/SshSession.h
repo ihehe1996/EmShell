@@ -75,6 +75,14 @@ public:
     void resize(int cols, int rows) override;
     void shutdown() override;
 
+    // 关标签用：只叫停、**不 join**，界面线程立刻返回。
+    //
+    // 工作线程可能正卡在 libssh2 的阻塞握手 / 认证里（服务器接了 TCP 却不回
+    // SSH 报文时要等 api_timeout）。以前 closeTab() 直接调 shutdown()，
+    // join 把界面线程一起堵住，表现就是点标签的 ✕ 之后整个窗口「未响应」。
+    // 这个方法让线程自己在后台收工，然后 deleteLater()。
+    void shutdownAsync();
+
     bool isRunning() const override;
     QString description() const override;
 
@@ -105,12 +113,16 @@ private:
     void setState(State s, const QString &detail = QString());
     void setError(const QString &error);
     void cleanup();
+    void requestStop();
 
     Options m_options;
 
     std::thread m_worker;
     std::atomic<bool> m_running{ false };
     std::atomic<bool> m_stopRequested{ false };
+    // 工作线程彻底收工（包括所有 emit）之后才置 true。shutdownAsync() 靠它
+    // 判断什么时候可以安全 join + deleteLater。
+    std::atomic<bool> m_workerDone{ false };
     std::atomic<State> m_state{ State::Idle };
 
     QMutex m_mutex;                 // 保护下面这些跨线程的东西
