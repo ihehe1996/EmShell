@@ -32,7 +32,8 @@ void ConnectionStore::load()
 {
     QFile f(m_filePath);
     if (!f.open(QIODevice::ReadOnly)) {
-        seedDemoData();
+        // 首次运行：从空数据开始。这里**不要**塞示例连接 —— 程序是打包发出去的，
+        // 新用户装好一打开就该看到空的「所有连接」，而不是一堆 192.168.x.x 的假条目。
         save();
         return;
     }
@@ -43,9 +44,9 @@ void ConnectionStore::load()
     QJsonParseError err{};
     const QJsonDocument doc = QJsonDocument::fromJson(raw, &err);
     if (err.error != QJsonParseError::NoError || !doc.isObject()) {
-        // 文件坏了就别硬读，备份一份再从空开始，免得用户数据无声消失
+        // 文件坏了就别硬读，备份一份再从空开始，免得用户数据无声消失。
+        // 同样不补示例数据 —— 那是假数据，补进来只会让人以为自己的连接被换掉了。
         QFile::rename(m_filePath, m_filePath + QStringLiteral(".broken"));
-        seedDemoData();
         save();
         return;
     }
@@ -328,36 +329,6 @@ void ConnectionStore::clearHistory()
     m_history.clear();
     save();
     emit historyChanged();
-}
-
-// ------------------------------------------------------------ 示例数据 ---
-
-void ConnectionStore::seedDemoData()
-{
-    ConnectionGroup gProd(QStringLiteral("生产环境"));
-    ConnectionGroup gDev(QStringLiteral("开发环境"));
-    ConnectionGroup gOther(QStringLiteral("其他"));
-    gProd.order = 0;
-    gDev.order  = 1;
-    gOther.order = 2;
-    m_groups << gProd << gDev << gOther;
-
-    auto add = [this](const QString &name, const QString &host, const QString &user,
-                      const QString &groupId, bool fav) {
-        Connection c = Connection::create(name, host, user);
-        c.groupId  = groupId;
-        c.favorite = fav;
-        m_connections << c;
-    };
-
-    add(QStringLiteral("生产服务器 - Web"),   QStringLiteral("192.168.1.100"), QStringLiteral("root"),   gProd.id,  false);
-    add(QStringLiteral("生产服务器 - 数据库"), QStringLiteral("192.168.1.101"), QStringLiteral("root"),   gProd.id,  false);
-    add(QStringLiteral("生产服务器 - 备份"),   QStringLiteral("192.168.1.102"), QStringLiteral("root"),   gProd.id,  true);
-    add(QStringLiteral("开发服务器 - 测试"),   QStringLiteral("192.168.2.100"), QStringLiteral("ubuntu"), gDev.id,   false);
-    add(QStringLiteral("开发服务器 - 代码仓库"), QStringLiteral("192.168.2.101"), QStringLiteral("git"),  gDev.id,   false);
-    add(QStringLiteral("本地服务器"),          QStringLiteral("127.0.0.1"),     QStringLiteral("root"),   gOther.id, false);
-
-    qInfo("EmShell: 首次运行，已写入 %lld 条示例连接", static_cast<long long>(m_connections.size()));
 }
 
 } // namespace Em

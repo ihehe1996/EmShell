@@ -18,7 +18,8 @@ class ConnectionStore : public QObject
 public:
     explicit ConnectionStore(QObject *parent = nullptr);
 
-    // 从磁盘读。文件不存在时会写入一份示例数据，免得第一次打开是空的。
+    // 从磁盘读。文件不存在（首次运行）时保持空数据并落一份空文件 ——
+    // 不要往新用户的列表里塞示例连接。
     void load();
     void save();
 
@@ -61,7 +62,6 @@ signals:
     void historyChanged();
 
 private:
-    void seedDemoData();
     static QString dataDirectory();
 
     QString m_filePath;
