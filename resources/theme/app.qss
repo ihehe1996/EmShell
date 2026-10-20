@@ -732,48 +732,89 @@ QDialogButtonBox QPushButton:hover { background: @bg-hover; color: @text; }
     border-radius: 0;
 }
 
+QTabWidget {
+    border: none;
+    background: transparent;
+}
 QTabWidget::pane {
+    border: none;
+    background: transparent;
+}
+QTabWidget::tab-bar {
     border: none;
     background: transparent;
 }
 QTabBar { background: transparent; qproperty-drawBase: 0; }
 
-/* 终端标签。
-   宽度不在这里定 —— 由 TerminalTabBar::tabSizeHint() 按名字算，
-   这里的 padding 左右各 12px 必须和那边 kTabPaddingH 保持一致。
-   也**不要**加 max-width：加了又会把长名字往回压。 */
-/* 宽度不在这里定 —— 由 TerminalTabBar::tabSizeHint() 按名字算，
-   这里的 padding 左右各 12px 必须和那边 kTabPaddingH 保持一致。
-   也**不要**加 max-width（加了又会把长名字压回去）或 margin-bottom
-   （标签栏和终端之间的间隙由页面布局给，加了这里会让标签矩形比画出来的盒子高，
-   里面的文字和关闭按钮就不居中了）。 */
+/* 终端标签栏的整体底板（一条通栏轨道 + 底部发丝线）由 TerminalPage.cpp 里的
+   TabRail 画，它铺满整行、垫在标签栏和最右边的「+」底下。
+   这里负责每个标签自己的形状：**选中的标签必须有一块实色底**，
+   和轨道、下面的终端都拉开明度差。不要再做成「透明挖空」——
+   那样标签和终端是同一个颜色，看上去就像没有标签栏。 */
+
+/* 宽度不在这里定 —— 由 TerminalTabBar::tabSizeHint() 按名字算。
+   下面三个横向值必须和 TerminalPage.cpp 里的常量一一对上：
+     padding-left  = kTabPaddingLeft
+     padding-right = kTabPaddingRight
+     margin-right  = kTabMarginRight
+   也**不要**加 max-width（加了会把长名字压回去）或 margin-bottom
+   （标签矩形会比画出来的盒子高，文字和关闭按钮就不居中了）。 */
 QTabBar::tab {
     background: transparent;
-    color: @text-mute;
-    border: 1px solid transparent;
-    border-radius: 8px;
-    padding: 7px 26px 7px 8px;
-    margin-right: 4px;
+    /* 未选中也要用 text-dim，不要退到 text-mute —— 轨道本身有颜色，
+       mute 在上面会发灰、显得看不清。 */
+    color: @text-dim;
+    /* 只留上面两个圆角：标签是坐在轨道上的，底边贴着轨道的那条发丝线 */
+    border-radius: 8px 8px 0 0;
+    padding: 9px 26px 9px 10px;
+    margin-right: 2px;
     /* 这里**不要**写 font-size。写了之后 QSS 画的标签文字里，数字和汉字的基线会错开 ——
        数字被画低一截再裁掉下半，「本地 2」显示出来是个缺底的 2、「本地 3」同理，
        而汉字看着好好的，特别难往这里想。另外 tabSizeHint() 里的 horizontalAdvance()
        是按控件字体（14px）算的，字号写别的值还会让宽度算不准。 */
 }
+/* 悬停色单独给一个 token。复用 bg-hover 的话，深色下它和选中标签的浅色底
+   几乎一样亮，鼠标扫过去会像选中了似的。 */
 QTabBar::tab:hover {
-    background: @bg-hover;
-    color: @text-dim;
-}
-/* 选中的标签**不加粗**。加粗会改字体度量：宽度是按常规体算的（tabSizeHint 里
-   用的是标签栏的字体），画出来却是粗体、比算出来的宽，文字在盒子里就被挤得移位。
-   选中态靠白底 + 描边 + 更深的名字已经足够区分。 */
-QTabBar::tab:selected {
-    background: @bg-panel;
+    background: @term-tab-hover-bg;
     color: @text;
-    border-color: @border;
+}
+/* 选中态 = 轻轻提亮一点的底 + 文字变亮。**不加边框、不铺实色卡片**：
+   用户明确说整块带边框的卡片很丑。真正的选中信号是底部那 3px 强调色条，
+   由 TerminalTabBar::paintEvent() 画（短条，只跟文字同宽）。
+   也**别加粗**，加粗会改字体度量（宽度按常规体算），文字会被挤得移位。 */
+QTabBar::tab:selected {
+    background: @term-tab-active-bg;
+    color: @text;
 }
 QTabBar::tab:selected:hover {
-    background: @bg-panel;
+    background: @term-tab-active-bg;
     color: @text;
+}
+
+/* 标签栏溢出时两侧的滚动箭头。箭头图标是在代码里换掉的（Fusion 自带的
+   箭头用调色板画，深色主题下几乎看不见），这里只负责按钮的底。
+   **选择器要写具体**：写成 `QTabBar QToolButton` 会把关闭按钮也一起匹配进去，
+   它的 16x16 悬停底色会被那条 margin 缩得几乎看不见。 */
+#ScrollLeftButton, #ScrollRightButton {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    margin: 6px 1px;
+}
+#ScrollLeftButton:hover, #ScrollRightButton:hover {
+    background: @bg-hover;
+}
+
+/* 「+」本身不要底板，和关闭按钮一样只在悬停时给一点反馈。
+   图标颜色烘在 QIcon 里（正常灰、悬停更深），QSS 管不到。 */
+#TabNewButton {
+    background: transparent;
+    border: none;
+    border-radius: 7px;
+}
+#TabNewButton:hover {
+    background: @bg-hover;
 }
 
 /* 标签上的关闭按钮。图标颜色是烘在 QIcon 里的（正常灰、悬停红），
@@ -781,7 +822,7 @@ QTabBar::tab:selected:hover {
 #TabCloseButton {
     background: transparent;
     border: none;
-    border-radius: 6px;
+    border-radius: 4px;
 }
 #TabCloseButton:hover {
     background: @err-soft;

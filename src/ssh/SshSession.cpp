@@ -11,6 +11,7 @@
 #endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <mstcpip.h>
 #include <windows.h>
 
 #include <libssh2.h>
@@ -98,6 +99,32 @@ QString describeKeyType(int hostKeyType)
 QString defaultKnownHostsPath()
 {
     return QDir::homePath() + QStringLiteral("/.ssh/known_hosts");
+}
+
+// 打开 TCP keepalive，并把探测间隔压短。
+//
+// Windows 默认的空闲探测是 **2 小时**才发第一个包，而且默认不打开。于是当
+// 对端 / 中间 NAT 悄悄丢掉了这条连接（没有 FIN，也没有 RST）时，本机的 recv
+// 会一直不返回错误，工作线程的 select() 每 15ms 醒一次、每次都觉得「没事」。
+// 界面表现就是：光标照样闪，但打字没有任何反应，要等很久之后某次 recv 才报
+// -43，然后才显示「连接失败」—— 用户会以为程序卡死了。
+//
+// 10 秒空闲 + 每 3 秒探测，Windows 连续几次探测无响应就会让 socket 进入错误
+// 状态，主循环下一轮 recv 立刻拿到错误，界面在 20 秒左右就能显示断开。
+void enableTcpKeepAlive(SOCKET s)
+{
+    BOOL on = TRUE;
+    ::setsockopt(s, SOL_SOCKET, SO_KEEPALIVE,
+                 reinterpret_cast<const char *>(&on), sizeof(on));
+
+    // SIO_KEEPALIVE_VALS 是 Windows 自己的接口，比 TCP_KEEPIDLE 那组兼容性更广。
+    tcp_keepalive ka{};
+    ka.onoff = TRUE;
+    ka.keepalivetime = 10000;     // 空闲 10 秒开始探测
+    ka.keepaliveinterval = 3000;  // 之后每 3 秒一次
+    DWORD bytes = 0;
+    ::WSAIoctl(s, SIO_KEEPALIVE_VALS, &ka, sizeof(ka), nullptr, 0, &bytes,
+               nullptr, nullptr);
 }
 
 } // namespace
@@ -321,7 +348,17 @@ void SshSession::workerMain()
             m_rows = newRows;
         }
 
-        // 5) 等 socket 有动静。15ms 超时是为了及时把新输入发出去，
+        // 5) SSH 心跳。到点才真的发包，没到点立刻返回。返回负值（EAGAIN
+        //    除外）说明传输层已经坏了，马上收工 —— 别等到用户敲键盘才发现。
+        int keepAliveSeconds = 0;
+        const int ka = libssh2_keepalive_send(sess(m_session), &keepAliveSeconds);
+        if (ka < 0 && ka != LIBSSH2_ERROR_EAGAIN) {
+            setError(sessionError(sess(m_session), QStringLiteral("连接保活失败")));
+            fatal = true;
+            break;
+        }
+
+        // 6) 等 socket 有动静。15ms 超时是为了及时把新输入发出去，
         //    代价可以忽略（空闲时每秒钟也就 60 来次 select）
         fd_set readSet, writeSet;
         FD_ZERO(&readSet);
@@ -449,6 +486,9 @@ bool SshSession::connectSocket(QString *errorOut)
                      reinterpret_cast<const char *>(&timeoutMs), sizeof(timeoutMs));
         ::setsockopt(s, SOL_SOCKET, SO_SNDTIMEO,
                      reinterpret_cast<const char *>(&timeoutMs), sizeof(timeoutMs));
+
+        // 连接空闲时也要能及时发现对端已经没了（详见 enableTcpKeepAlive）
+        enableTcpKeepAlive(s);
 
         m_socket = quintptr(s);
         ::freeaddrinfo(result);
@@ -736,6 +776,13 @@ bool SshSession::openShell(QString *errorOut)
     }
 
     libssh2_session_set_blocking(session, 0);
+
+    // SSH 层心跳。除了配合 TCP keepalive 一起确认对端还活着，也能防住
+    // sshd 的 ClientAliveInterval：不少服务器配了「几分钟没有报文就断开」，
+    // 用户切去别的窗口久了回来，连接已经被服务器收掉了。
+    // 15 秒一次，对交互式终端没有可感知的影响。
+    libssh2_keepalive_config(session, 1, 15);
+
     return true;
 }
 

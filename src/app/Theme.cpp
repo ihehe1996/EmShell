@@ -161,6 +161,18 @@ const QHash<QString, QString> &lightTable()
         { QStringLiteral("win-hover"),       QStringLiteral("rgba(21, 27, 43, 0.06)") },
         { QStringLiteral("win-close-hover"), QStringLiteral("rgba(217, 45, 32, 0.10)") },
 
+        // 终端标签栏：一条比画布更暗一档的轨道。选中标签只比轨道再提亮一点，
+        // 主要的选中信号交给底部那 3px 强调色条（在 TerminalTabBar 里画）。
+        //     画布 #F7F8FC → 轨道 ≈#E0E6F4 → 选中标签 ≈#F5F7FB + 蓝色指示条
+        // 不要做成整块实色卡片（用户说丑），也不要做成透明挖空（会和终端
+        // 融为一体、看不出来）。三项都带 alpha，设了背景图时不会把图盖死。
+        { QStringLiteral("term-rail-bg"),        QStringLiteral("rgba(219, 226, 242, 0.82)") },
+        { QStringLiteral("term-rail-line"),      QStringLiteral("rgba(21, 27, 43, 0.10)") },
+        // 悬停是轻轻压暗一点；选中是提亮一档 + 底部强调色条（色条在代码里画）。
+        // 选中**不要**做成整块实色卡片：用户明确说那样很丑。
+        { QStringLiteral("term-tab-hover-bg"),   QStringLiteral("rgba(21, 27, 43, 0.05)") },
+        { QStringLiteral("term-tab-active-bg"),  QStringLiteral("rgba(255, 255, 255, 0.68)") },
+
         // 终端背景**完全透明**：文字直接画在页面背景图上，不再铺一层底色。
         // TerminalView 因此不能开 WA_OpaquePaintEvent，逐格 fill 前也会判 alpha。
         { QStringLiteral("term-bg"),     QStringLiteral("rgba(0, 0, 0, 0)") },
@@ -240,6 +252,14 @@ const QHash<QString, QString> &darkTable()
         { QStringLiteral("brand-sub"),       QStringLiteral("#8A8494") },
         { QStringLiteral("win-hover"),       QStringLiteral("rgba(255, 255, 255, 0.07)") },
         { QStringLiteral("win-close-hover"), QStringLiteral("rgba(240, 85, 61, 0.22)") },
+
+        // 深色下轨道比画布提亮一档，选中标签再轻轻提亮一点；底色不抢戏，
+        // 选中主要靠底部的强调色条（accent）来表达。
+        //     画布 #12151C → 轨道 ≈#1B202A → 选中标签 ≈#2B303A + 蓝色指示条
+        { QStringLiteral("term-rail-bg"),        QStringLiteral("rgba(29, 34, 45, 0.82)") },
+        { QStringLiteral("term-rail-line"),      QStringLiteral("rgba(0, 0, 0, 0.45)") },
+        { QStringLiteral("term-tab-hover-bg"),   QStringLiteral("rgba(255, 255, 255, 0.035)") },
+        { QStringLiteral("term-tab-active-bg"),  QStringLiteral("rgba(255, 255, 255, 0.07)") },
 
         { QStringLiteral("term-bg"),     QStringLiteral("rgba(0, 0, 0, 0)") },
         { QStringLiteral("term-fg"),     QStringLiteral("#D6DAE3") },

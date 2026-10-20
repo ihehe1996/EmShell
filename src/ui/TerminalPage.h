@@ -45,9 +45,17 @@ public:
 
     int tabCount() const { return m_tabs.size(); }
 
+    // 标签栏在当前布局下的高度。MainWindow 用它把左侧那条补条（盖住
+    // 侧栏阴影）对齐到标签栏的底边。
+    int tabBarHeight() const;
+
 signals:
     // error 为 true 时底部状态条会用警示色显示
     void statusMessage(const QString &text, bool error = false);
+
+    // 标签增删（有几个标签变了）。MainWindow 用它在「有标签 / 空状态」之间
+    // 切换左侧的补条。
+    void tabsChanged();
 
     // 空状态里的「查看所有连接」：切页的事交给 MainWindow
     void browseConnectionsRequested();

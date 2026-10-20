@@ -9,15 +9,18 @@
 #include "ui/SettingsPage.h"
 #include "ui/Widgets.h"
 
+#include <QEvent>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
+#include <QPainter>
 #include <QPointer>
 #include <QStackedWidget>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QToolButton>
+#include <QTransform>
 #include <QVBoxLayout>
 
 #include <memory>
@@ -40,26 +43,25 @@ QString quoteArg(const QString &arg)
 
 // 标签宽度按这几段拼出来。左内边距、右内边距、margin-right 都要和 app.qss 里
 // QTabBar::tab 的那几个值对上，改一边就得改另一边。
-constexpr int kTabPaddingH = 8;         // 文字距标签盒子左边（= QSS 的 padding-left）
-constexpr int kTabMarginRight = 4;       // = QSS 的 margin-right
-constexpr int kTabCloseSize = 16;        // 关闭按钮的边长
-constexpr int kTabCloseRightMargin = 12; // 关闭按钮距**画出来的**盒子右边
+constexpr int kTabPaddingLeft = 10;     // 文字距标签盒子左边（= QSS 的 padding-left）
+constexpr int kTabPaddingRight = 26;    // 关闭按钮那一块（= QSS 的 padding-right）
+constexpr int kTabMarginRight = 2;       // = QSS 的 margin-right
+constexpr int kTabCloseSize = 16;        // 关闭按钮的命中区边长
+constexpr int kTabCloseRightMargin = 8;  // 关闭按钮距**画出来的**盒子右边
+constexpr int kTabCloseGap = 6;          // 文字末尾到关闭按钮之间
+constexpr int kTabIndicatorHeight = 3;   // 选中标签底部强调色条的高度
 
-// 标签的右内边距 = 给关闭按钮预留的那一整块（必须和 app.qss 的 padding-right 一致）。
-//
-// 这是治「名字和 ✕ 之间空一大截」的关键：Qt 画标签文字是**居中**排的，右内边距小的话
-// 文字就被推到整块空间的中间，右边自然空出一大块；而想从宽度上补回去，字又会被裁。
-// 把右内边距设成「✕ 那一整块」，文字能用的横向空间就只剩「文字 + 一点余量」，居中
-// 等于左对齐，✕ 落在内边距里 —— 两边都不用挤。
-constexpr int kTabPaddingRight = 26;
+// 标签栏最右边给「+」留的一整块。标签栏的宽度会被压到「总宽 - 这一块」，
+// 否则标签一多，滚动箭头就会跑到「+」下面去。
+constexpr int kTabNewButtonSize = 28;
+constexpr int kTabNewRightMargin = 10;
+constexpr int kTabNewSlot = kTabNewButtonSize + kTabNewRightMargin;
 
 // 文字能用的横向空间比 horizontalAdvance() 多留这么几个像素，吸收「算出来的宽度」
 // 和「画出来的墨迹」之间的出入（字距、取整）。**给小了会裁掉最后一个字的最后一笔**。
 constexpr int kTabTextSlack = 15;
 
-// 文字末尾到关闭按钮之间留多少（眼睛看到的那个空隙）。
-constexpr int kTabCloseGap = 6;       // 文字末尾到关闭按钮之间
-
+// 标签栏只负责每个标签自己的前景。整条轨道由底下的 TabRail 画。
 class TerminalTabBar : public QTabBar
 {
 public:
@@ -74,8 +76,20 @@ protected:
     void paintEvent(QPaintEvent *event) override
     {
         QTabBar::paintEvent(event);
-        // 标签增删、拖动、滚动都会重画标签栏，借这里把按钮重新贴上去
+        // 借这里把关闭按钮重新贴上去
         repinCloseButtons();
+        polishScrollButtons();
+        // 强调色条要画在标签底色上面，所以放在 base paint 之后
+        drawActiveIndicator();
+    }
+
+public:
+    // = QSS margin-right 之后真正画出来的那个盒子
+    QRect paintedTabRect(int index) const
+    {
+        QRect r = tabRect(index);
+        r.adjust(0, 0, -kTabMarginRight, 0);
+        return r;
     }
 
     // 每个标签都给「名字完整显示」需要的宽度，一个字都不省、也不压缩。
@@ -94,11 +108,84 @@ protected:
     // 实测窗口照样能缩窄。
 
 private:
+    // 选中标签底部的一小段强调色条。
+    //
+    // 选中态不再铺整块实色卡片：底色只轻轻提亮一点，主要靠这条 3px 的短条。
+    // 长度跟着文字走（文字宽 + 20），居中在文字下面 —— 不要把右边关闭按钮
+    // 也算进去，否则整条会偏右。
+    void drawActiveIndicator()
+    {
+        const int index = currentIndex();
+        if (index < 0)
+            return;
+
+        const QRect r = paintedTabRect(index);
+        if (r.width() <= 0 || r.right() < 0 || r.left() > width())
+            return;
+
+        const int textW = fontMetrics().horizontalAdvance(tabText(index));
+        const int areaW = r.width() - kTabPaddingLeft - kTabPaddingRight;
+        const int textLeft = r.left() + kTabPaddingLeft + qMax(0, (areaW - textW) / 2);
+        const int center = textLeft + textW / 2;
+
+        int barW = qMin(r.width() - 16, textW + 20);
+        if (barW <= 0)
+            return;
+
+        int x = center - barW / 2;
+        const int minX = r.left() + 8;
+        const int maxX = r.right() + 1 - 8 - barW;
+        if (maxX < minX) {
+            barW = r.width() - 16;
+            if (barW <= 0)
+                return;
+            x = r.left() + (r.width() - barW) / 2;
+        } else {
+            x = qBound(minX, x, maxX);
+        }
+
+        // 贴在标签底边：正好盖住轨道那条发丝线，看起来像「选中项的下划线」
+        const int y = r.bottom() + 1 - kTabIndicatorHeight;
+
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        p.setPen(Qt::NoPen);
+        p.setBrush(Theme::color(QStringLiteral("accent")));
+        p.drawRoundedRect(QRectF(x, y, barW, kTabIndicatorHeight), 1.5, 1.5);
+    }
+
+    // 标签太多时 Qt 会放两个滚动箭头。Fusion 画的是调色板色的实心小三角，
+    // 深色主题下几乎看不见；换成 Icons 里那个线条箭头，颜色跟界面一致。
+    void polishScrollButtons()
+    {
+        if (m_scrollPolishDone)
+            return;
+        m_scrollPolishDone = true;
+
+        const QColor color = Theme::color(QStringLiteral("text-dim"));
+        for (QToolButton *b : findChildren<QToolButton *>()) {
+            const bool left = b->objectName() == QLatin1String("ScrollLeftButton");
+            const bool right = b->objectName() == QLatin1String("ScrollRightButton");
+            if (!left && !right)
+                continue;
+
+            QPixmap arrow = Icons::pixmap(Icon::ChevronRight, color, 12);
+            if (left)   // 没有 ChevronLeft，镜像一份
+                arrow = arrow.transformed(QTransform::fromScale(-1, 1));
+
+            b->setArrowType(Qt::NoArrow);
+            b->setIcon(QIcon(arrow));
+            b->setIconSize(QSize(12, 12));
+        }
+    }
+
+    bool m_scrollPolishDone = false;
+
     // 名字完整显示需要的宽度
     int preferredWidth(int index) const
     {
         const int textWidth = fontMetrics().horizontalAdvance(tabText(index));
-        return kTabPaddingH + textWidth + kTabTextSlack
+        return kTabPaddingLeft + textWidth + kTabTextSlack
                + kTabPaddingRight + kTabMarginRight;
     }
 
@@ -120,7 +207,7 @@ private:
                 continue;
             }
 
-            const QRect r = tabRect(index);
+            const QRect r = paintedTabRect(index);
             if (r.right() < 0 || r.left() > width()) {   // 滚到可视范围外了
                 btn->hide();
                 continue;
@@ -133,16 +220,48 @@ private:
             // ✕ 往右让开 kTabCloseGap 就是。绑右边的话，右边那点余量（右内边距减去
             // ✕ 那一块）会全变成文字和 ✕ 之间的空白。
             const int textW = fontMetrics().horizontalAdvance(tabText(index));
-            const int areaW = r.width() - kTabMarginRight - kTabPaddingH - kTabPaddingRight;
-            const int textLeft = r.left() + kTabPaddingH + qMax(0, (areaW - textW) / 2);
+            const int areaW = r.width() - kTabPaddingLeft - kTabPaddingRight;
+            const int textLeft = r.left() + kTabPaddingLeft + qMax(0, (areaW - textW) / 2);
             const int x = qMin(textLeft + textW + kTabCloseGap,
-                               r.right() - kTabMarginRight - kTabCloseRightMargin - kTabCloseSize);
+                               r.right() + 1 - kTabCloseRightMargin - kTabCloseSize);
 
             btn->setGeometry(x, r.top() + (r.height() - kTabCloseSize) / 2,
                              kTabCloseSize, kTabCloseSize);
             btn->show();
             btn->raise();
         }
+    }
+};
+
+// 标签栏的底板：一条通栏轨道 + 底部一条发丝线。
+//
+// 为什么不直接画在标签栏自己身上：标签栏的宽度被限制在「总宽 - 38px」，
+// 最右边那一块要留给「+」。这里单独做一个铺满整行宽的 Widget，垫在标签栏
+// 和「+」底下；它们都是透明的，轨道从底下透上来，最右端就不会缺一块。
+//
+// 轨道比画布暗（深色下则比画布亮）一档，保证「看得出来有标签栏」；
+// 选中的标签只再轻提亮一点，主要靠底部那条 accent 短条（drawActiveIndicator）
+// 来指示当前标签，不做整块实色卡片。
+class TabRail : public QWidget
+{
+public:
+    explicit TabRail(QWidget *parent = nullptr) : QWidget(parent)
+    {
+        // 它只是底板，不接鼠标事件，否则会把标签栏的点击挡掉
+        setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        if (width() <= 0 || height() <= 0)
+            return;
+
+        QPainter p(this);
+        p.setPen(Qt::NoPen);
+        p.fillRect(rect(), Theme::color(QStringLiteral("term-rail-bg")));
+        p.fillRect(QRect(0, height() - 1, width(), 1),
+                   Theme::color(QStringLiteral("term-rail-line")));
     }
 };
 
@@ -164,7 +283,7 @@ public:
         // 不给 tooltip：一个 ✕ 上飘个「关闭」的气泡纯属碍事，鼠标扫过时很吵
         setFixedSize(kTabCloseSize, kTabCloseSize);
 
-        const int iconSize = 12;
+        const int iconSize = 11;
         setIconSize(QSize(iconSize, iconSize));
 
         QIcon closeIcon;
@@ -178,6 +297,34 @@ public:
     }
 };
 
+// 标签栏最右边的「+」。和关闭按钮同一套做法：图标颜色烘进 QIcon，
+// 背景交给 QSS。尺寸比关闭按钮大一档，因为它是「新建」这种主动作。
+class TabNewButton : public QToolButton
+{
+public:
+    explicit TabNewButton(QWidget *parent = nullptr) : QToolButton(parent)
+    {
+        setObjectName(QStringLiteral("TabNewButton"));
+        setCursor(Qt::PointingHandCursor);
+        setFocusPolicy(Qt::NoFocus);
+        setAutoRaise(true);
+        setFixedSize(kTabNewButtonSize, kTabNewButtonSize);
+        setToolTip(QStringLiteral("新建本地终端"));
+
+        const int iconSize = 14;
+        setIconSize(QSize(iconSize, iconSize));
+
+        QIcon plusIcon;
+        plusIcon.addPixmap(Icons::pixmap(Icon::Plus,
+                                         Theme::color(QStringLiteral("text-dim")), iconSize),
+                           QIcon::Normal, QIcon::Off);
+        plusIcon.addPixmap(Icons::pixmap(Icon::Plus,
+                                         Theme::color(QStringLiteral("text")), iconSize),
+                           QIcon::Active, QIcon::Off);
+        setIcon(plusIcon);
+    }
+};
+
 // 用自己那套标签栏。setTabBar() 是 protected，只能在自己类里换，
 // 所以这里绕一层。
 class TerminalTabWidget : public QTabWidget
@@ -185,8 +332,71 @@ class TerminalTabWidget : public QTabWidget
 public:
     explicit TerminalTabWidget(QWidget *parent = nullptr) : QTabWidget(parent)
     {
-        setTabBar(new TerminalTabBar(this));
+        auto *bar = new TerminalTabBar(this);
+        setTabBar(bar);
+
+        // 底板铺满整行，垫在标签栏和「+」下面。
+        m_rail = new TabRail(this);
+        bar->installEventFilter(this);
+
+        // **不要用 setCornerWidget() 给「+」占位。** 标签装不下的时候 Qt 会让
+        // 标签栏吃满整个宽度，corner widget 被挤到控件外面去（实测 x=宽度+1），
+        // 「+」和右边那个滚动箭头就叠在一起了。而且 Windows 上 corner 的顶边
+        // 还会多画一条 2px 的 #CCCCCC 原生线，QSS 和控件样式都盖不掉。
+        // 现在改成给标签栏限宽，把最右边 kTabNewSlot 永久留给「+」；
+        // 「+」是 TerminalTabWidget 的直接子控件，位置由 syncRail() 摆。
     }
+
+    // 「+」由 TerminalPage 创建（它要知道点下去开什么），这里只负责摆位置。
+    void setNewTabButton(QWidget *button)
+    {
+        m_newTabButton = button;
+        syncRail();
+    }
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QTabWidget::resizeEvent(event);
+        syncRail();
+    }
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        // 标签栏的高度由 QSS polish 之后才定下来，resizeEvent 之外也会变
+        if (watched == tabBar()
+            && (event->type() == QEvent::Resize || event->type() == QEvent::LayoutRequest)) {
+            syncRail();
+        }
+        return QTabWidget::eventFilter(watched, event);
+    }
+
+private:
+    void syncRail()
+    {
+        if (!m_rail || !tabBar())
+            return;
+
+        tabBar()->setMaximumWidth(qMax(0, width() - kTabNewSlot));
+
+        const QRect g(0, 0, width(), tabBar()->height());
+        if (m_rail->geometry() != g)
+            m_rail->setGeometry(g);
+        m_rail->update();
+
+        // 叠放顺序：标签栏在轨道上面（文字和关闭按钮不能被轨道盖住），
+        // 「+」再抬到最上面。
+        tabBar()->raise();
+        if (m_newTabButton) {
+            m_newTabButton->setGeometry(width() - kTabNewSlot,
+                                        (tabBar()->height() - kTabNewButtonSize) / 2,
+                                        kTabNewButtonSize, kTabNewButtonSize);
+            m_newTabButton->raise();
+        }
+    }
+
+    TabRail *m_rail = nullptr;
+    QWidget *m_newTabButton = nullptr;
 };
 
 } // namespace
@@ -213,11 +423,11 @@ TerminalPage::TerminalPage(ConnectionStore *store, KeyStore *keys, QWidget *pare
     m_tabBar->setElideMode(Qt::ElideNone);
     m_tabBar->tabBar()->setExpanding(false);
 
-    // 标签栏右边加一个「新建」小按钮
-    auto *newLocal = new PillButton(QString(), PillButton::Subtle, this);
-    newLocal->makeCompact(Icon::Plus, 15, QStringLiteral("新建本地终端"));
-    connect(newLocal, &QPushButton::clicked, this, [this] { openLocalSession(); });
-    m_tabBar->setCornerWidget(newLocal, Qt::TopRightCorner);
+    // 标签栏右边加一个「新建」小按钮。它挂在 TerminalTabWidget 自己身上，
+    // 位置和叠放顺序由那边算（见 syncRail）。
+    auto *newLocal = new TabNewButton(m_tabBar);
+    connect(newLocal, &QToolButton::clicked, this, [this] { openLocalSession(); });
+    static_cast<TerminalTabWidget *>(m_tabBar)->setNewTabButton(newLocal);
 
     connect(m_tabBar, &QTabWidget::tabCloseRequested, this, &TerminalPage::closeTab);
     connect(m_tabBar, &QTabWidget::currentChanged, this, [this](int) {
@@ -294,12 +504,21 @@ QWidget *TerminalPage::buildEmptyState()
     return page;
 }
 
+int TerminalPage::tabBarHeight() const
+{
+    if (!m_tabBar)
+        return 0;
+    const int h = m_tabBar->tabBar()->height();
+    return h > 0 ? h : m_tabBar->tabBar()->sizeHint().height();
+}
+
 void TerminalPage::updateEmptyState()
 {
     if (!m_stack)
         return;
     m_stack->setCurrentWidget(m_tabs.isEmpty() ? m_emptyPage
                                                : static_cast<QWidget *>(m_tabBar));
+    emit tabsChanged();
 }
 
 TerminalPage::Tab *TerminalPage::tabAt(int index) const
@@ -333,8 +552,9 @@ TerminalPage::Tab *TerminalPage::createTab(const QString &title)
 
     auto *layout = new QVBoxLayout(tab->container);
     // 左边距给 0：终端要紧贴着左边的侧栏，中间留一条白缝很难看。
-    // 另外三边留 8，让终端面板和标签栏之间有个呼吸。
-    layout->setContentsMargins(0, 8, 8, 8);
+    // 上边距也给 0：选中的标签是标签栏轨道上挖出来的一个口子，终端必须紧贴着
+    // 它往下排，中间有缝的话「连成一体」就断了。右、下各留 8。
+    layout->setContentsMargins(0, 0, 8, 8);
     layout->setSpacing(0);
     layout->addWidget(terminalWrap);
 

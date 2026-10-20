@@ -34,6 +34,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QStackedWidget>
+#include <QTabWidget>
 #include <QTextStream>
 #include <QTimer>
 
@@ -1075,6 +1076,62 @@ int runTerminalShot()
     return g_fail == 0 ? 0 : 1;
 }
 
+// ---------------------------------------------------------------------------
+// 终端标签栏截图：一次开几个标签，用来检查多标签的间距、滚动和关闭按钮位置。
+//   --tabui [宽 高 [标签数]]
+// 配合 EMSHELL_THEME=light|dark 用。
+// ---------------------------------------------------------------------------
+int runTabShot(int width, int height, int count)
+{
+    QFile::remove(QStringLiteral("selftest.log"));
+    log(QStringLiteral("== 终端标签栏截图 =="));
+
+    ConnectionStore store;
+    store.load();
+    KeyStore keys;
+    keys.load();
+
+    MainWindow window(&store, &keys);
+    window.resize(width, height);
+    window.show();
+
+    auto *terminal = window.findChild<TerminalPage *>();
+    if (terminal) {
+        if (auto *stack = window.findChild<QStackedWidget *>())
+            stack->setCurrentWidget(terminal);
+        QTimer::singleShot(500, terminal, [terminal, count] {
+            for (int i = 0; i < count; ++i)
+                terminal->openLocalSession();
+        });
+        // 第一个标签换成很长的名字，检查宽度和关闭按钮还对不对
+        QTimer::singleShot(900, &window, [&window] {
+            if (auto *tabs = window.findChild<QTabWidget *>())
+                tabs->setTabText(0, QStringLiteral("生产环境 - 数据库主节点"));
+        });
+        // 切回第一个，检查轨道上的「口子」有没有跟着选中项走
+        QTimer::singleShot(3000, &window, [&window] {
+            if (auto *tabs = window.findChild<QTabWidget *>())
+                tabs->setCurrentIndex(0);
+        });
+    }
+
+    QTimer::singleShot(4200, &window, [&window] {
+        dumpUiGeometry(&window, QStringLiteral("selftest.log.tree"));
+        log(QStringLiteral("---- 控件树 ----"));
+        QFile f(QStringLiteral("selftest.log.tree"));
+        if (f.open(QIODevice::ReadOnly | QIODevice::Text))
+            log(QString::fromUtf8(f.readAll()));
+        if (window.grab().save(QStringLiteral("tabui.png")))
+            log(QStringLiteral("  已保存 tabui.png"));
+        qApp->quit();
+    });
+    QTimer::singleShot(9000, [] { qApp->quit(); });
+    qApp->exec();
+
+    flushLog();
+    return g_fail == 0 ? 0 : 1;
+}
+
 int runProbeShot()
 {
     QFile::remove(QStringLiteral("selftest.log"));
@@ -1501,6 +1558,7 @@ bool isSelfTestRequest(const QStringList &arguments)
            || arguments.contains(QStringLiteral("--updatepageui"))
            || arguments.contains(QStringLiteral("--probeui"))
            || arguments.contains(QStringLiteral("--termui"))
+           || arguments.contains(QStringLiteral("--tabui"))
            || arguments.contains(QStringLiteral("--updatecheck"))
            || arguments.contains(QStringLiteral("--ptytest"))
            || arguments.contains(QStringLiteral("--sshtest"))
@@ -1514,6 +1572,14 @@ int runSelfTest(const QStringList &arguments)
 {
     if (arguments.contains(QStringLiteral("--termui")))
         return runTerminalShot();
+    if (arguments.contains(QStringLiteral("--tabui"))) {
+        const int i = arguments.indexOf(QStringLiteral("--tabui"));
+        const int w = (i + 1 < arguments.size()) ? arguments.at(i + 1).toInt() : 1280;
+        const int h = (i + 2 < arguments.size()) ? arguments.at(i + 2).toInt() : 800;
+        const int n = (i + 3 < arguments.size()) ? arguments.at(i + 3).toInt() : 4;
+        // 允许传 0：不开标签，检查空状态（顺带确认左侧补条没有露出来）
+        return runTabShot(w > 0 ? w : 1280, h > 0 ? h : 800, n >= 0 ? n : 4);
+    }
     if (arguments.contains(QStringLiteral("--probeui")))
         return runProbeShot();
     if (arguments.contains(QStringLiteral("--settingsui")))

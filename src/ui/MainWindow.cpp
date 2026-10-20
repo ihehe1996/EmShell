@@ -66,6 +66,33 @@ constexpr DWORD kDwmTextColor            = 36;   // Win11 22000+
 constexpr DWORD kDwmWindowCornerPreference = 33; // Win11 22000+
 
 
+// 标签栏左侧那 12px 的补条。
+//
+// 内容区和侧栏之间夹着一条固定 12px 宽的 EdgeShadow。终端页的标签栏底色
+// 铺到内容区左边缘就断了，于是标签栏和左侧菜单之间会留出一条很扎眼的缝。
+// 这个补条盖在阴影的顶部（和标签栏等高），把轨道底色和底部发丝线接过去，
+// 视觉上标签栏就一直连到侧栏边上。它只在终端页并且确实有标签时显示。
+class TabBandFill : public QWidget
+{
+public:
+    explicit TabBandFill(QWidget *parent = nullptr) : QWidget(parent)
+    {
+        // 它只补一块颜色，不接鼠标事件
+        setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setPen(Qt::NoPen);
+        p.fillRect(rect(), Theme::color(QStringLiteral("term-rail-bg")));
+        p.fillRect(QRect(0, height() - 1, width(), 1),
+                   Theme::color(QStringLiteral("term-rail-line")));
+    }
+};
+
+
 } // namespace
 
 // 右侧内容区的底：用户设了背景图就画图 + 一层深色蒙层，没设就什么都不画，
@@ -234,8 +261,14 @@ void MainWindow::buildUi()
     contentLayout->addWidget(m_sideBar);
     // 夹在侧栏和内容区中间的那道投影。两块区域底色太接近，光靠 1px 描边
     // 分不出层次，加一层阴影才看得出侧栏是「浮」在内容区上面的
-    contentLayout->addWidget(new EdgeShadow(Qt::RightEdge, content));
+    m_edgeShadow = new EdgeShadow(Qt::RightEdge, content);
+    contentLayout->addWidget(m_edgeShadow);
     contentLayout->addWidget(m_stack, 1);
+
+    // 标签栏的补条：盖住阴影顶部，让标签栏底色连到侧栏边上。
+    // 不在布局里 —— 位置跟着标签栏高度走，见 updateTabBandFill()。
+    m_tabBandFill = new TabBandFill(content);
+    m_tabBandFill->hide();
 
     auto *body = new QWidget(root);
     auto *bodyLayout = new QVBoxLayout(body);
@@ -306,6 +339,9 @@ void MainWindow::wireSignals()
     // 终端页空状态里的「查看所有连接」：切页交给这里
     connect(m_terminal, &TerminalPage::browseConnectionsRequested, this,
             [this] { switchPage(AppPage::Connections); });
+    // 标签栏左侧的补条跟着「切到终端页 / 标签数变化」显隐
+    connect(m_stack, &QStackedWidget::currentChanged, this, [this] { updateTabBandFill(); });
+    connect(m_terminal, &TerminalPage::tabsChanged, this, &MainWindow::updateTabBandFill);
 
     // ---- 软件更新 ----
     connect(m_updatePage, &UpdatePage::checkUpdateRequested, this, &MainWindow::checkForUpdates);
@@ -356,6 +392,34 @@ void MainWindow::switchPage(AppPage page)
     // 以及点连接时先蹦出一个本地终端、再开 SSH 标签。
 }
 
+void MainWindow::updateTabBandFill()
+{
+    if (!m_tabBandFill || !m_edgeShadow || !m_stack || !m_terminal)
+        return;
+
+    // 只在「当前是终端页」并且「确实有标签」时显示 —— 空状态没有标签栏，
+    // 补一条颜色反而像凭空多出来一小块。
+    const bool visible = m_stack->currentWidget() == m_terminal
+                         && m_terminal->tabCount() > 0;
+    const int h = visible ? m_terminal->tabBarHeight() : 0;
+    if (!visible || h <= 0) {
+        m_tabBandFill->hide();
+        return;
+    }
+
+    // 阴影是 content 的直接子控件，补条也是，所以坐标可以直接照抄。
+    const QRect shadow = m_edgeShadow->geometry();
+    m_tabBandFill->setGeometry(shadow.x(), m_stack->y(), shadow.width(), h);
+    m_tabBandFill->raise();   // 必须压在 EdgeShadow 上面才盖得住
+    m_tabBandFill->show();
+}
+
+void MainWindow::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    updateTabBandFill();
+}
+
 void MainWindow::reloadBackground()
 {
     if (!m_backgroundHost)
@@ -386,6 +450,10 @@ void MainWindow::reloadBackground()
             repolish(m_sideBar);
         }
     }
+
+    // 补条画的是半透明色，底下的背景图换了得重画一遍才对得上
+    if (m_tabBandFill)
+        m_tabBandFill->update();
 }
 
 void MainWindow::checkForUpdates()

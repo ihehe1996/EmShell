@@ -44,6 +44,7 @@ public:
 protected:
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
     void changeEvent(QEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
 
 private:
@@ -55,6 +56,8 @@ private:
     void applyNativeTitleBarTheme();
 
     void switchPage(AppPage page);
+    // 把标签栏左侧那条补条对齐到当前标签栏（只在终端页、有标签时显示）
+    void updateTabBandFill();
     // 重新读一次背景图设置（启动时 + 设置页改了之后）
     void reloadBackground();
     // 侧栏点了某个分组：切到它自己的页面（同一个 ConnectionsPage 实例换身份）
@@ -78,6 +81,8 @@ private:
     SideBar *m_sideBar = nullptr;
     BackgroundHost *m_backgroundHost = nullptr;
     QStackedWidget *m_stack = nullptr;
+    QWidget *m_edgeShadow = nullptr;      // 侧栏右侧那条 12px 阴影
+    QWidget *m_tabBandFill = nullptr;     // 盖住阴影顶部的标签栏补条
 
     ConnectionsPage *m_connections = nullptr;
     ConnectionsPage *m_favorites = nullptr;
