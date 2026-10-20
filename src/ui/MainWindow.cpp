@@ -640,16 +640,41 @@ void MainWindow::showTrayMenu()
     POINT pt{};
     ::GetCursorPos(&pt);
 
-    // 托盘菜单的常规做法：先把 owner 设为前台，用户点菜单外面时才会收起；
-    // 结束后补一个 WM_NULL，避免菜单残留在屏幕上。
-    const HWND hwnd = reinterpret_cast<HWND>(winId());
-    ::SetForegroundWindow(hwnd);
+    // 菜单 owner **不能用主窗口**。
+    // 主窗口最小化在任务栏里时，SetForegroundWindow(主窗口) 会把它还原 ——
+    // 表现就是「右键托盘图标，主窗口直接弹出来了」。
+    // 这里用一个屏幕外的 1x1 工具窗口当 owner：它能被设成前台（保证点菜单
+    // 外面时菜单会收起），但不会出现在任务栏 / Alt+Tab，也不碰主窗口状态。
+    static QWidget *menuOwner = nullptr;
+    if (!menuOwner) {
+        menuOwner = new QWidget(nullptr, Qt::Tool | Qt::FramelessWindowHint);
+        menuOwner->setAttribute(Qt::WA_ShowWithoutActivating);
+        menuOwner->setAttribute(Qt::WA_TranslucentBackground);
+    }
+    menuOwner->setGeometry(-10000, -10000, 1, 1);
+    menuOwner->show();
+    const HWND ownerHwnd = reinterpret_cast<HWND>(menuOwner->winId());
 
+    const HWND mainHwnd = reinterpret_cast<HWND>(winId());
+    const HWND previous = ::GetForegroundWindow();
+
+    ::SetForegroundWindow(ownerHwnd);
     const int cmd = ::TrackPopupMenu(menu,
                                      TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
-                                     pt.x, pt.y, 0, hwnd, nullptr);
+                                     pt.x, pt.y, 0, ownerHwnd, nullptr);
     ::DestroyMenu(menu);
-    ::PostMessage(hwnd, WM_NULL, 0, 0);
+    ::PostMessage(ownerHwnd, WM_NULL, 0, 0);
+
+    // 把前台还给原来的窗口。如果原来就是最小化的主窗口（或句柄已失效），
+    // 就还给任务栏 —— 否则收菜单时系统可能把主窗口带出来。
+    HWND restore = previous;
+    if (!restore || !::IsWindow(restore)
+        || (restore == mainHwnd && isMinimized())) {
+        restore = ::FindWindowW(L"Shell_TrayWnd", nullptr);
+    }
+    if (restore)
+        ::SetForegroundWindow(restore);
+    menuOwner->hide();
 
     if (cmd == kShowCommand) {
         showFromTray();
