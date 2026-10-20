@@ -474,11 +474,19 @@ QWidget *TerminalPage::buildEmptyState()
 {
     auto *page = new QWidget;
 
-    auto *title = makeLabel(QStringLiteral("未连接任何终端"), "empty", page);
-    title->setAlignment(Qt::AlignCenter);
+    // 标题和说明放在同一行里：前面是大字，后面是弱一档的提示，
+    // 用基线对齐，两种字号的中文底部不会一高一低。
+    auto *header = new QWidget(page);
+    auto *headerLayout = new QHBoxLayout(header);
+    headerLayout->setContentsMargins(0, 0, 0, 0);
+    headerLayout->setSpacing(10);
 
-    auto *subtitle = makeLabel(QStringLiteral("请选择您的操作："), "hint", page);
-    subtitle->setAlignment(Qt::AlignCenter);
+    auto *title = makeLabel(QStringLiteral("未连接任何终端"), "empty", header);
+    auto *subtitle = makeLabel(QStringLiteral("请选择您的操作"), "hint", header);
+    headerLayout->addStretch(1);
+    headerLayout->addWidget(title, 0, Qt::AlignBaseline);
+    headerLayout->addWidget(subtitle, 0, Qt::AlignBaseline);
+    headerLayout->addStretch(1);
 
     // 三个 ActionTile。容器用透明 QWidget 而不是 Card —— tile 自己就是
     // 白底卡片，外面再套一层 Card 会变成双层边框。
@@ -516,8 +524,7 @@ QWidget *TerminalPage::buildEmptyState()
     layout->setContentsMargins(24, 24, 24, 24);
     layout->setSpacing(6);
     layout->addStretch(1);
-    layout->addWidget(title);
-    layout->addWidget(subtitle);
+    layout->addWidget(header);
     layout->addSpacing(18);
     layout->addWidget(centered);
     layout->addStretch(1);
