@@ -5,7 +5,6 @@
 
 #include <QWidget>
 
-class QMenu;
 class QStackedWidget;
 class QSystemTrayIcon;
 class QTimer;
@@ -72,6 +71,8 @@ private:
 
     // 系统托盘。没有托盘的环境（极少数）下退化成普通窗口：关闭即退出。
     void createTrayIcon();
+    // 右键托盘图标时弹**系统原生菜单**（不用 QMenu，避免被全局 QSS 套上自定义样式）
+    void showTrayMenu();
     void showFromTray();
 
     ConnectionStore *m_store = nullptr;
@@ -96,7 +97,6 @@ private:
     UpdateChecker *m_silentChecker = nullptr;
 
     QSystemTrayIcon *m_tray = nullptr;
-    QMenu *m_trayMenu = nullptr;
     bool m_quitRequested = false;   // 托盘菜单点了「退出」，closeEvent 别再藏窗口
     bool m_trayHintShown = false;   // 「已最小化到托盘」只提示一次
 

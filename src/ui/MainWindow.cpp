@@ -17,12 +17,10 @@
 #include "ui/Widgets.h"
 #include "update/UpdateChecker.h"
 
-#include <QAction>
 #include <QApplication>
 #include <QCloseEvent>
 #include <QFrame>
 #include <QHBoxLayout>
-#include <QMenu>
 #include <QSystemTrayIcon>
 #include <QKeySequence>
 #include <QLineEdit>
@@ -36,6 +34,8 @@
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QtMath>
+
+#include <string>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #  define WIN32_LEAN_AND_MEAN
@@ -598,35 +598,67 @@ void MainWindow::createTrayIcon()
     if (!QSystemTrayIcon::isSystemTrayAvailable())
         return;
 
-    m_trayMenu = new QMenu(this);
-
-    QAction *showAction = m_trayMenu->addAction(QStringLiteral("显示主窗口"));
-    connect(showAction, &QAction::triggered, this, &MainWindow::showFromTray);
-
-    m_trayMenu->addSeparator();
-
-    QAction *quitAction = m_trayMenu->addAction(QStringLiteral("退出 EmShell"));
-    connect(quitAction, &QAction::triggered, this, [this] {
-        m_quitRequested = true;
-        if (m_tray)
-            m_tray->hide();
-        qApp->quit();
-    });
-
     m_tray = new QSystemTrayIcon(windowIcon(), this);
     m_tray->setToolTip(QStringLiteral("EmShell"));
-    m_tray->setContextMenu(m_trayMenu);
 
-    // 左键单击 / 双击都恢复窗口（Windows 上单击通常就是 Trigger）
+    // 左键单击 / 双击恢复窗口；右键弹原生菜单（见 showTrayMenu）。
     connect(m_tray, &QSystemTrayIcon::activated, this,
             [this](QSystemTrayIcon::ActivationReason reason) {
-        if (reason == QSystemTrayIcon::Trigger
-            || reason == QSystemTrayIcon::DoubleClick) {
+        if (reason == QSystemTrayIcon::Context) {
+            showTrayMenu();
+        } else if (reason == QSystemTrayIcon::Trigger
+                   || reason == QSystemTrayIcon::DoubleClick) {
             showFromTray();
         }
     });
 
     m_tray->show();
+}
+
+// 托盘右键菜单：直接弹 Win32 原生菜单。
+//
+// 为什么不用 QMenu：app.qss 给 QMenu / QMenu::item 写了整套自定义样式，
+// 托盘菜单会被一起套上，和系统里其它托盘菜单完全不是一个样子。
+// 这里 CreatePopupMenu + TrackPopupMenu(TPM_RETURNCMD)，字体、颜色、
+// 深色/浅色、圆角全交给 Windows，程序这边只认返回的命令 ID。
+void MainWindow::showTrayMenu()
+{
+    HMENU menu = ::CreatePopupMenu();
+    if (!menu)
+        return;
+
+    constexpr UINT kShowCommand = 1;
+    constexpr UINT kQuitCommand = 2;
+
+    const std::wstring showText = QStringLiteral("显示主窗口").toStdWString();
+    const std::wstring quitText = QStringLiteral("退出 EmShell").toStdWString();
+    ::AppendMenuW(menu, MF_STRING, kShowCommand, showText.c_str());
+    ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    ::AppendMenuW(menu, MF_STRING, kQuitCommand, quitText.c_str());
+    ::SetMenuDefaultItem(menu, kShowCommand, FALSE);
+
+    POINT pt{};
+    ::GetCursorPos(&pt);
+
+    // 托盘菜单的常规做法：先把 owner 设为前台，用户点菜单外面时才会收起；
+    // 结束后补一个 WM_NULL，避免菜单残留在屏幕上。
+    const HWND hwnd = reinterpret_cast<HWND>(winId());
+    ::SetForegroundWindow(hwnd);
+
+    const int cmd = ::TrackPopupMenu(menu,
+                                     TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
+                                     pt.x, pt.y, 0, hwnd, nullptr);
+    ::DestroyMenu(menu);
+    ::PostMessage(hwnd, WM_NULL, 0, 0);
+
+    if (cmd == kShowCommand) {
+        showFromTray();
+    } else if (cmd == kQuitCommand) {
+        m_quitRequested = true;
+        if (m_tray)
+            m_tray->hide();
+        qApp->quit();
+    }
 }
 
 void MainWindow::showFromTray()
