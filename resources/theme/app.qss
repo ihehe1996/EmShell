@@ -775,7 +775,10 @@ QTabBar::tab {
     /* 左边 14；右边 20。文字在内容区居中，多出来的宽度正好放状态圆点和
        关闭按钮，具体计算见 TerminalPage.cpp 的 kTabMarkerSize / preferredWidth。 */
     padding: 0px 20px 0px 14px;
-    min-height: 42px;
+    /* 标签高度只在这里定。12px 字体配 38px（加下面 1px 底边，实际高度 39）。
+       改这里以后：tabBarHeight() / TabBandFill / 关闭按钮和圆点的居中都会
+       自动跟着走，不用改别处。 */
+    min-height: 30px;
     margin-right: 0px;
     /* 这里**不要**写 font-size。写了之后 QSS 画的标签文字里，数字和汉字的基线会错开 ——
        数字被画低一截再裁掉下半，「本地 2」显示出来是个缺底的 2、「本地 3」同理，

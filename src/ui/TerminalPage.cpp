@@ -415,6 +415,10 @@ TerminalPage::TerminalPage(ConnectionStore *store, KeyStore *keys, QWidget *pare
     , m_keys(keys)
 {
     m_tabBar = new TerminalTabWidget(this);
+    // 选项卡文字 12px。**不要**把 font-size 写进 QSS 的 QTabBar::tab ——
+    // 那样数字和汉字基线会错开、宽度也会算不准（见 app.qss 里的说明）。
+    // 给标签栏本体设字体，tabSizeHint() 里的 fontMetrics() 会自动跟上。
+    m_tabBar->tabBar()->setFont(Theme::uiFont(12));
     // **这里必须是 false。** 关闭按钮是我们自己放的（见 createTab 里的 TabCloseButton），
     // 但 Qt 只要看到 tabsClosable 是 true，就还会在**文字区**里再给「它以为存在的」那个
     // 关闭按钮留一份宽度（实测约 14px）—— 于是标签名最后那个字被裁掉一截，而且因为
