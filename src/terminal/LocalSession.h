@@ -6,6 +6,7 @@
 #include <QStringList>
 
 #include <atomic>
+#include <mutex>
 #include <thread>
 
 namespace Em {
@@ -56,9 +57,14 @@ private:
     void *m_process        = nullptr;
     void *m_job            = nullptr;   // 作业对象，保证关窗时子进程树一起死
 
+    // 伪控制台会在两个地方被关掉：主线程的 shutdown()，以及子进程自己退出时
+    // 的等待线程。用一把小锁保证不会同时 ClosePseudoConsole / ResizePseudoConsole。
+    std::mutex m_pcMutex;
+
     std::atomic<bool> m_running{ false };
     std::atomic<bool> m_stopRequested{ false };
     std::thread m_reader;
+    std::thread m_processWaiter;
 };
 
 } // namespace Em

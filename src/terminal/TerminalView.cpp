@@ -271,7 +271,7 @@ void TerminalView::paintEvent(QPaintEvent *)
     const TermColors colors{ Theme::color(QStringLiteral("term-fg")),
                              Theme::color(QStringLiteral("term-bg")) };
     const QColor termBg = colors.bg;
-    // term-bg 现在是全透明（文字直接画在页面背景图上），透明就不要再铺一层
+    // term-bg 现在是全透明（文字直接画在页面背景 / 背景图上），透明就不要再铺一层。
     if (termBg.alpha() > 0)
         p.fillRect(rect(), termBg);
 

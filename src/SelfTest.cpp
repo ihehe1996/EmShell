@@ -1100,8 +1100,15 @@ int runTabShot(int width, int height, int count)
         if (auto *stack = window.findChild<QStackedWidget *>())
             stack->setCurrentWidget(terminal);
         QTimer::singleShot(500, terminal, [terminal, count] {
-            for (int i = 0; i < count; ++i)
-                terminal->openLocalSession();
+            // EMSHELL_TABUI_EXIT=1：最后一个标签开一个立刻退出的命令，
+            // 用来检查状态圆点有没有从绿变红。
+            const bool quickExit = qEnvironmentVariableIsSet("EMSHELL_TABUI_EXIT");
+            for (int i = 0; i < count; ++i) {
+                if (quickExit && i == count - 1)
+                    terminal->openLocalSession(QStringLiteral("cmd /c exit"));
+                else
+                    terminal->openLocalSession();
+            }
         });
         // 第一个标签换成很长的名字，检查宽度和关闭按钮还对不对
         QTimer::singleShot(900, &window, [&window] {
@@ -1115,7 +1122,9 @@ int runTabShot(int width, int height, int count)
         });
     }
 
-    QTimer::singleShot(4200, &window, [&window] {
+    // EMSHELL_TABUI_EXIT 那个用例要让进程真的退出，等久一点再截图
+    const int shotDelay = qEnvironmentVariableIsSet("EMSHELL_TABUI_EXIT") ? 5000 : 4200;
+    QTimer::singleShot(shotDelay, &window, [&window] {
         dumpUiGeometry(&window, QStringLiteral("selftest.log.tree"));
         log(QStringLiteral("---- 控件树 ----"));
         QFile f(QStringLiteral("selftest.log.tree"));
@@ -1125,7 +1134,7 @@ int runTabShot(int width, int height, int count)
             log(QStringLiteral("  已保存 tabui.png"));
         qApp->quit();
     });
-    QTimer::singleShot(9000, [] { qApp->quit(); });
+    QTimer::singleShot(shotDelay + 4000, [] { qApp->quit(); });
     qApp->exec();
 
     flushLog();

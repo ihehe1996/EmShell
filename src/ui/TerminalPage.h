@@ -70,6 +70,8 @@ private:
     };
 
     Tab *createTab(const QString &title);
+    // 把会话接到标签上，并挂好「断开后把状态圆点变红」的回调
+    void attachSession(Tab *tab, TerminalSession *session);
     void closeTab(int index);
     void applyTitle(Tab *tab, const QString &title);
     Tab *tabAt(int index) const;

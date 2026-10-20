@@ -161,20 +161,22 @@ const QHash<QString, QString> &lightTable()
         { QStringLiteral("win-hover"),       QStringLiteral("rgba(21, 27, 43, 0.06)") },
         { QStringLiteral("win-close-hover"), QStringLiteral("rgba(217, 45, 32, 0.10)") },
 
-        // 终端标签栏：一条比画布更暗一档的轨道。选中标签只比轨道再提亮一点，
-        // 主要的选中信号交给底部那 3px 强调色条（在 TerminalTabBar 里画）。
-        //     画布 #F7F8FC → 轨道 ≈#E0E6F4 → 选中标签 ≈#F5F7FB + 蓝色指示条
-        // 不要做成整块实色卡片（用户说丑），也不要做成透明挖空（会和终端
-        // 融为一体、看不出来）。三项都带 alpha，设了背景图时不会把图盖死。
-        { QStringLiteral("term-rail-bg"),        QStringLiteral("rgba(219, 226, 242, 0.82)") },
-        { QStringLiteral("term-rail-line"),      QStringLiteral("rgba(21, 27, 43, 0.10)") },
-        // 悬停是轻轻压暗一点；选中是提亮一档 + 底部强调色条（色条在代码里画）。
-        // 选中**不要**做成整块实色卡片：用户明确说那样很丑。
-        { QStringLiteral("term-tab-hover-bg"),   QStringLiteral("rgba(21, 27, 43, 0.05)") },
-        { QStringLiteral("term-tab-active-bg"),  QStringLiteral("rgba(255, 255, 255, 0.68)") },
+        // 终端标签栏和终端区块是**两套配色共用的固定深色**（用户指定的值）：
+        //   标签栏 #1F2430，选中标签 / 终端 #282C34，分隔线和底边 #0B0D12。
+        // 所以这几个 token 在浅色主题里也照样是深色；标签文字要用 nav-text
+        // 那套给深色轨道准备的颜色，不能再用 text-dim（浅色下是深灰，看不见）。
+        { QStringLiteral("term-rail-bg"),        QStringLiteral("#1F2430") },
+        { QStringLiteral("term-rail-line"),      QStringLiteral("#0B0D12") },
+        { QStringLiteral("term-tab-hover-bg"),   QStringLiteral("rgba(255, 255, 255, 0.06)") },
+        { QStringLiteral("term-tab-sep"),        QStringLiteral("#0B0D12") },
+        { QStringLiteral("term-tab-active-bg"),  QStringLiteral("#282C34") },
+        { QStringLiteral("term-tab-close-line"), QStringLiteral("#3A3F4B") },
+        // 标签名前面的状态圆点：绿 = 连接中/正常，红 = 已断开
+        { QStringLiteral("term-tab-ok"),         QStringLiteral("#3FB950") },
+        { QStringLiteral("term-tab-err"),        QStringLiteral("#F0553D") },
 
-        // 终端背景**完全透明**：文字直接画在页面背景图上，不再铺一层底色。
-        // TerminalView 因此不能开 WA_OpaquePaintEvent，逐格 fill 前也会判 alpha。
+        // 终端背景保持**全透明**：文字直接画在页面背景（背景图 / 画布）上。
+        // 标签栏和选中的标签仍然是不透明的固定深色，这两块不受影响。
         { QStringLiteral("term-bg"),     QStringLiteral("rgba(0, 0, 0, 0)") },
         { QStringLiteral("term-fg"),     QStringLiteral("#D8DCE4") },
         { QStringLiteral("term-cursor"), QStringLiteral("#5C7CFA") },
@@ -253,13 +255,16 @@ const QHash<QString, QString> &darkTable()
         { QStringLiteral("win-hover"),       QStringLiteral("rgba(255, 255, 255, 0.07)") },
         { QStringLiteral("win-close-hover"), QStringLiteral("rgba(240, 85, 61, 0.22)") },
 
-        // 深色下轨道比画布提亮一档，选中标签再轻轻提亮一点；底色不抢戏，
-        // 选中主要靠底部的强调色条（accent）来表达。
-        //     画布 #12151C → 轨道 ≈#1B202A → 选中标签 ≈#2B303A + 蓝色指示条
-        { QStringLiteral("term-rail-bg"),        QStringLiteral("rgba(29, 34, 45, 0.82)") },
-        { QStringLiteral("term-rail-line"),      QStringLiteral("rgba(0, 0, 0, 0.45)") },
-        { QStringLiteral("term-tab-hover-bg"),   QStringLiteral("rgba(255, 255, 255, 0.035)") },
-        { QStringLiteral("term-tab-active-bg"),  QStringLiteral("rgba(255, 255, 255, 0.07)") },
+        // 和浅色主题共用同一套固定深色（用户指定的值）：
+        // 标签栏 #1F2430，选中标签/终端 #282C34，分隔线和底边 #0B0D12。
+        { QStringLiteral("term-rail-bg"),        QStringLiteral("#1F2430") },
+        { QStringLiteral("term-rail-line"),      QStringLiteral("#0B0D12") },
+        { QStringLiteral("term-tab-hover-bg"),   QStringLiteral("rgba(255, 255, 255, 0.06)") },
+        { QStringLiteral("term-tab-sep"),        QStringLiteral("#0B0D12") },
+        { QStringLiteral("term-tab-active-bg"),  QStringLiteral("#282C34") },
+        { QStringLiteral("term-tab-close-line"), QStringLiteral("#3A3F4B") },
+        { QStringLiteral("term-tab-ok"),         QStringLiteral("#3FB950") },
+        { QStringLiteral("term-tab-err"),        QStringLiteral("#F0553D") },
 
         { QStringLiteral("term-bg"),     QStringLiteral("rgba(0, 0, 0, 0)") },
         { QStringLiteral("term-fg"),     QStringLiteral("#D6DAE3") },

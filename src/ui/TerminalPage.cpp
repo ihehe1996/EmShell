@@ -43,23 +43,21 @@ QString quoteArg(const QString &arg)
 
 // 标签宽度按这几段拼出来。左内边距、右内边距、margin-right 都要和 app.qss 里
 // QTabBar::tab 的那几个值对上，改一边就得改另一边。
-constexpr int kTabPaddingLeft = 10;     // 文字距标签盒子左边（= QSS 的 padding-left）
-constexpr int kTabPaddingRight = 26;    // 关闭按钮那一块（= QSS 的 padding-right）
-constexpr int kTabMarginRight = 2;       // = QSS 的 margin-right
-constexpr int kTabCloseSize = 16;        // 关闭按钮的命中区边长
-constexpr int kTabCloseRightMargin = 8;  // 关闭按钮距**画出来的**盒子右边
-constexpr int kTabCloseGap = 6;          // 文字末尾到关闭按钮之间
-constexpr int kTabIndicatorHeight = 3;   // 选中标签底部强调色条的高度
+constexpr int kTabPaddingLeft = 14;     // 文字区距标签盒子左边（= QSS 的 padding-left）
+constexpr int kTabPaddingRight = 20;    // = QSS 的 padding-right
+constexpr int kTabMarginRight = 0;      // = QSS 的 margin-right（分隔线用 border-right）
+constexpr int kTabMarkerSize = 8;       // 标签名前面的状态圆点（和分组菜单的点一样大）
+constexpr int kTabMarkerGap = 8;        // 圆点到文字的间距
+constexpr int kTabCloseSize = 18;       // 关闭按钮的命中区边长
+constexpr int kTabCloseRightMargin = 8; // 关闭按钮距**画出来的**盒子右边
+constexpr int kTabCloseGap = 8;         // 文字末尾到关闭按钮之间
+constexpr int kTabIndicatorHeight = 2;  // 选中标签顶部蓝色条的高度
 
 // 标签栏最右边给「+」留的一整块。标签栏的宽度会被压到「总宽 - 这一块」，
 // 否则标签一多，滚动箭头就会跑到「+」下面去。
 constexpr int kTabNewButtonSize = 28;
 constexpr int kTabNewRightMargin = 10;
 constexpr int kTabNewSlot = kTabNewButtonSize + kTabNewRightMargin;
-
-// 文字能用的横向空间比 horizontalAdvance() 多留这么几个像素，吸收「算出来的宽度」
-// 和「画出来的墨迹」之间的出入（字距、取整）。**给小了会裁掉最后一个字的最后一笔**。
-constexpr int kTabTextSlack = 15;
 
 // 标签栏只负责每个标签自己的前景。整条轨道由底下的 TabRail 画。
 class TerminalTabBar : public QTabBar
@@ -79,8 +77,9 @@ protected:
         // 借这里把关闭按钮重新贴上去
         repinCloseButtons();
         polishScrollButtons();
-        // 强调色条要画在标签底色上面，所以放在 base paint 之后
-        drawActiveIndicator();
+        // 状态圆点和顶部蓝条都画在标签上面，所以放在 base paint 之后
+        drawTabMarkers();
+        drawActiveTopBar();
     }
 
 public:
@@ -108,12 +107,40 @@ public:
     // 实测窗口照样能缩窄。
 
 private:
-    // 选中标签底部的一小段强调色条。
-    //
-    // 选中态不再铺整块实色卡片：底色只轻轻提亮一点，主要靠这条 3px 的短条。
-    // 长度跟着文字走（文字宽 + 20），居中在文字下面 —— 不要把右边关闭按钮
-    // 也算进去，否则整条会偏右。
-    void drawActiveIndicator()
+    // 标签名前面的状态圆点：绿 = 连接中/正常，红 = 已断开。
+    // 大小和分组菜单里的色点一致（8px 圆）。
+    // 连接状态存在页容器的 "connected" 属性上，由 TerminalPage 在会话
+    // exited 时改掉；这里按页取，标签拖动后颜色不会串。
+    void drawTabMarkers()
+    {
+        auto *tabs = qobject_cast<QTabWidget *>(parentWidget());
+        if (!tabs)
+            return;
+
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        p.setPen(Qt::NoPen);
+
+        for (int i = 0; i < count(); ++i) {
+            const QRect r = paintedTabRect(i);
+            if (r.right() < 0 || r.left() >= width())
+                continue;
+
+            QWidget *page = tabs->widget(i);
+            const bool connected = page && page->property("connected").toBool();
+            const QColor color = Theme::color(
+                connected ? QStringLiteral("term-tab-ok") : QStringLiteral("term-tab-err"));
+
+            const QRectF dot(r.left() + kTabPaddingLeft,
+                             r.top() + (r.height() - kTabMarkerSize) / 2.0,
+                             kTabMarkerSize, kTabMarkerSize);
+            p.setBrush(color);
+            p.drawEllipse(dot);
+        }
+    }
+
+    // 选中标签顶部的 2px 蓝条，颜色和「+ 新建连接」按钮的底色一致。
+    void drawActiveTopBar()
     {
         const int index = currentIndex();
         if (index < 0)
@@ -123,35 +150,10 @@ private:
         if (r.width() <= 0 || r.right() < 0 || r.left() > width())
             return;
 
-        const int textW = fontMetrics().horizontalAdvance(tabText(index));
-        const int areaW = r.width() - kTabPaddingLeft - kTabPaddingRight;
-        const int textLeft = r.left() + kTabPaddingLeft + qMax(0, (areaW - textW) / 2);
-        const int center = textLeft + textW / 2;
-
-        int barW = qMin(r.width() - 16, textW + 20);
-        if (barW <= 0)
-            return;
-
-        int x = center - barW / 2;
-        const int minX = r.left() + 8;
-        const int maxX = r.right() + 1 - 8 - barW;
-        if (maxX < minX) {
-            barW = r.width() - 16;
-            if (barW <= 0)
-                return;
-            x = r.left() + (r.width() - barW) / 2;
-        } else {
-            x = qBound(minX, x, maxX);
-        }
-
-        // 贴在标签底边：正好盖住轨道那条发丝线，看起来像「选中项的下划线」
-        const int y = r.bottom() + 1 - kTabIndicatorHeight;
-
         QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing, true);
         p.setPen(Qt::NoPen);
-        p.setBrush(Theme::color(QStringLiteral("accent")));
-        p.drawRoundedRect(QRectF(x, y, barW, kTabIndicatorHeight), 1.5, 1.5);
+        p.setBrush(Theme::color(QStringLiteral("nav-cta-bg")));
+        p.drawRect(QRect(r.left(), r.top(), r.width(), kTabIndicatorHeight));
     }
 
     // 标签太多时 Qt 会放两个滚动箭头。Fusion 画的是调色板色的实心小三角，
@@ -162,7 +164,7 @@ private:
             return;
         m_scrollPolishDone = true;
 
-        const QColor color = Theme::color(QStringLiteral("text-dim"));
+        const QColor color = Theme::color(QStringLiteral("nav-text"));
         for (QToolButton *b : findChildren<QToolButton *>()) {
             const bool left = b->objectName() == QLatin1String("ScrollLeftButton");
             const bool right = b->objectName() == QLatin1String("ScrollRightButton");
@@ -181,11 +183,15 @@ private:
 
     bool m_scrollPolishDone = false;
 
-    // 名字完整显示需要的宽度
+    // 名字完整显示需要的宽度。
+    //
+    // 文字在内容区里是**居中**排的。为了让文字刚好落在「状态圆点 + 8px」之后，
+    // 内容区要比文字宽出 2*(圆点+间距)：多出来的左半边正好放圆点和间距，
+    // 右半边则给关闭按钮留位。改这几个数时两边要一起算。
     int preferredWidth(int index) const
     {
         const int textWidth = fontMetrics().horizontalAdvance(tabText(index));
-        return kTabPaddingLeft + textWidth + kTabTextSlack
+        return kTabPaddingLeft + textWidth + 2 * (kTabMarkerSize + kTabMarkerGap)
                + kTabPaddingRight + kTabMarginRight;
     }
 
@@ -239,9 +245,9 @@ private:
 // 最右边那一块要留给「+」。这里单独做一个铺满整行宽的 Widget，垫在标签栏
 // 和「+」底下；它们都是透明的，轨道从底下透上来，最右端就不会缺一块。
 //
-// 轨道比画布暗（深色下则比画布亮）一档，保证「看得出来有标签栏」；
-// 选中的标签只再轻提亮一点，主要靠底部那条 accent 短条（drawActiveIndicator）
-// 来指示当前标签，不做整块实色卡片。
+// 轨道比画布暗一档（浅色深色都是），保证「看得出来有标签栏」；选中的标签
+// 不铺底色，而是把轨道和底部线整块挖掉，露出下面的画布 —— 和终端内容连成
+// 一体，正是参考页里「active tab 和 content 同色」的效果。
 class TabRail : public QWidget
 {
 public:
@@ -260,6 +266,8 @@ protected:
         QPainter p(this);
         p.setPen(Qt::NoPen);
         p.fillRect(rect(), Theme::color(QStringLiteral("term-rail-bg")));
+        // 标签栏底部那条 1px 边框（#0B0D12）。选中标签铺的是不透明的
+        // #282C34，会把自己底下这一段盖住，看起来和终端连成一体。
         p.fillRect(QRect(0, height() - 1, width(), 1),
                    Theme::color(QStringLiteral("term-rail-line")));
     }
@@ -288,10 +296,10 @@ public:
 
         QIcon closeIcon;
         closeIcon.addPixmap(Icons::pixmap(Icon::Close,
-                                          Theme::color(QStringLiteral("text-mute")), iconSize),
+                                          Theme::color(QStringLiteral("nav-text")), iconSize),
                             QIcon::Normal, QIcon::Off);
-        closeIcon.addPixmap(Icons::pixmap(Icon::Close,
-                                          Theme::color(QStringLiteral("err")), iconSize),
+        // 悬停时整块底色变红（QSS），✕ 跟着变白
+        closeIcon.addPixmap(Icons::pixmap(Icon::Close, Qt::white, iconSize),
                             QIcon::Active, QIcon::Off);
         setIcon(closeIcon);
     }
@@ -316,10 +324,10 @@ public:
 
         QIcon plusIcon;
         plusIcon.addPixmap(Icons::pixmap(Icon::Plus,
-                                         Theme::color(QStringLiteral("text-dim")), iconSize),
+                                         Theme::color(QStringLiteral("nav-text")), iconSize),
                            QIcon::Normal, QIcon::Off);
         plusIcon.addPixmap(Icons::pixmap(Icon::Plus,
-                                         Theme::color(QStringLiteral("text")), iconSize),
+                                         Theme::color(QStringLiteral("nav-text-hover")), iconSize),
                            QIcon::Active, QIcon::Off);
         setIcon(plusIcon);
     }
@@ -541,6 +549,9 @@ TerminalPage::Tab *TerminalPage::createTab(const QString &title)
     tab->title = title;
 
     tab->container = new QWidget;
+    // 状态圆点靠这个属性取色：新开的会话先按绿色算，连接失败 / 断开时
+    // 由 attachSession() 里的 exited 回调改成 false。
+    tab->container->setProperty("connected", true);
     tab->view = new TerminalView(tab->container);
 
     auto *terminalWrap = new QWidget(tab->container);
@@ -551,9 +562,8 @@ TerminalPage::Tab *TerminalPage::createTab(const QString &title)
     wrapLayout->addWidget(tab->view);
 
     auto *layout = new QVBoxLayout(tab->container);
-    // 左边距给 0：终端要紧贴着左边的侧栏，中间留一条白缝很难看。
-    // 上边距也给 0：选中的标签是标签栏轨道上挖出来的一个口子，终端必须紧贴着
-    // 它往下排，中间有缝的话「连成一体」就断了。右、下各留 8。
+    // 左边、上边贴边；右、下各留 8px 呼吸。终端背景是透明的，这点留白
+    // 不会露出一块不同的颜色，只是让文字别顶着窗口边缘。
     layout->setContentsMargins(0, 0, 8, 8);
     layout->setSpacing(0);
     layout->addWidget(terminalWrap);
@@ -590,6 +600,27 @@ TerminalPage::Tab *TerminalPage::createTab(const QString &title)
     return tab;
 }
 
+// 把会话接到标签上，并挂好「断开后把状态圆点变红」的回调。
+//
+// 圆点刚建标签时按绿色算（正在连接 / 正常）；只有会话真的 exited 了才变红。
+// 用 QPointer 守住容器：用户可能已经关掉标签，而 SSH 工作线程要过一会儿
+// 才把 exited 发出来，不能直接碰已经 deleteLater 的控件。
+void TerminalPage::attachSession(Tab *tab, TerminalSession *session)
+{
+    tab->session = session;
+    tab->view->setSession(session);
+
+    tab->container->setProperty("connected", true);
+
+    QPointer<QWidget> container(tab->container);
+    connect(session, &TerminalSession::exited, this, [this, container](int) {
+        if (!container)
+            return;
+        container->setProperty("connected", false);
+        m_tabBar->tabBar()->update();
+    });
+}
+
 // 会话报了窗口标题（OSC 0/2）。**只更新 tooltip，不动标签上的字。**
 //
 // 原来这里是拿标题覆盖标签名的，但那个标题基本没法用：
@@ -623,8 +654,10 @@ void TerminalPage::openLocalSession(const QString &shell)
 
     ++m_untitledCount;
     Tab *tab = createTab(QStringLiteral("本地 %1").arg(m_untitledCount));
-    tab->session = session;
-    tab->view->setSession(session);
+    attachSession(tab, session);
+    // 进程可能在 start() 之后、挂信号之前就已经退了（命令立刻报错）
+    if (!session->isRunning())
+        tab->container->setProperty("connected", false);
 
     m_tabBar->setCurrentIndex(tab->index);
     tab->view->setFocus();
@@ -722,8 +755,7 @@ void TerminalPage::openNativeSsh(const Connection &connection, const SshSession:
     auto *session = new SshSession(options, this);
 
     Tab *tab = createTab(connection.name.isEmpty() ? connection.host : connection.name);
-    tab->session = session;
-    tab->view->setSession(session);
+    attachSession(tab, session);
 
     // 握手 / 认证阶段终端里一个字都没有，先给一行提示。
     // 远端一旦开始输出，这条就自然地留在上方。
@@ -841,8 +873,9 @@ void TerminalPage::openConnectionViaCli(const Connection &connection)
     }
 
     Tab *tab = createTab(connection.name.isEmpty() ? connection.host : connection.name);
-    tab->session = session;
-    tab->view->setSession(session);
+    attachSession(tab, session);
+    if (!session->isRunning())
+        tab->container->setProperty("connected", false);
 
     // **这条路径不写「正在连接主机 …」。** 系统 ssh 客户端一启动就先发一串
     // 隐藏光标 + 清屏 + 光标归位的控制序列，写在前面的提示会被整屏清掉；

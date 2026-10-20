@@ -244,6 +244,23 @@ bool LocalSession::start(int cols, int rows, QString *errorOut)
     m_running = true;
     m_reader = std::thread([this] { readLoop(); });
 
+    // 子进程自己退出时，ConPTY 并不会替我们关掉输出管道：读者线程会一直
+    // 卡在 ReadFile 里，于是永远不会 emit exited，标签上的状态圆点也就一直
+    // 是绿的。这里单独等进程句柄，退出后把伪控制台关掉，把读者线程叫醒。
+    m_processWaiter = std::thread([this] {
+        if (m_process)
+            ::WaitForSingleObject(toHandle(m_process), INFINITE);
+
+        void *pc = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(m_pcMutex);
+            pc = m_pseudoConsole;
+            m_pseudoConsole = nullptr;
+        }
+        if (pc)
+            ::ClosePseudoConsole(toHandle(pc));
+    });
+
     emit started();
     return true;
 }
@@ -302,6 +319,7 @@ void LocalSession::resize(int cols, int rows)
     m_cols = cols;
     m_rows = rows;
 
+    std::lock_guard<std::mutex> lock(m_pcMutex);
     if (m_pseudoConsole) {
         const COORD size{ static_cast<SHORT>(cols), static_cast<SHORT>(rows) };
         ::ResizePseudoConsole(toHandle(m_pseudoConsole), size);
@@ -315,11 +333,17 @@ void LocalSession::shutdown()
 
     m_running = false;
 
-    // 先关伪控制台，让子进程收到关闭信号，读者线程才会从 ReadFile 里出来
-    if (m_pseudoConsole) {
-        ::ClosePseudoConsole(toHandle(m_pseudoConsole));
+    // 先关伪控制台，让子进程收到关闭信号，读者线程才会从 ReadFile 里出来。
+    // 进程自己退出时，等待线程可能已经先一步把它关掉了，这里 exchange 一下
+    // 保证只关一次。
+    void *pc = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(m_pcMutex);
+        pc = m_pseudoConsole;
         m_pseudoConsole = nullptr;
     }
+    if (pc)
+        ::ClosePseudoConsole(toHandle(pc));
 
     if (m_inputWrite) {
         ::CloseHandle(toHandle(m_inputWrite));
@@ -334,6 +358,12 @@ void LocalSession::shutdown()
         DWORD code = 0;
         if (::GetExitCodeProcess(toHandle(m_process), &code) && code == STILL_ACTIVE)
             ::TerminateProcess(toHandle(m_process), 0);
+
+        // 进程已经结束了，等待线程马上就会返回；**先 join 再关句柄**，
+        // 不能在别的线程还 wait 在这个句柄上时把它关掉。
+        if (m_processWaiter.joinable())
+            m_processWaiter.join();
+
         ::CloseHandle(toHandle(m_process));
         m_process = nullptr;
     }
