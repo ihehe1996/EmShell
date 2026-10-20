@@ -1120,6 +1120,21 @@ int runTabShot(int width, int height, int count)
             if (auto *tabs = window.findChild<QTabWidget *>())
                 tabs->setCurrentIndex(0);
         });
+        // EMSHELL_TABUI_STATES=1：把四个标签分别标成 本地 / 连接中 / 已连接 / 已断开，
+        // 用来检查状态圆点的四种颜色。
+        if (qEnvironmentVariableIsSet("EMSHELL_TABUI_STATES")) {
+            QTimer::singleShot(2500, &window, [&window] {
+                if (auto *tabs = window.findChild<QTabWidget *>()) {
+                    static const char *states[] = {
+                        "local", "connecting", "connected", "disconnected"
+                    };
+                    for (int i = 0; i < tabs->count() && i < 4; ++i)
+                        tabs->widget(i)->setProperty("tabState",
+                                                     QString::fromLatin1(states[i]));
+                    tabs->tabBar()->update();
+                }
+            });
+        }
     }
 
     // EMSHELL_TABUI_EXIT 那个用例要让进程真的退出，等久一点再截图

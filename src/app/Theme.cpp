@@ -171,9 +171,12 @@ const QHash<QString, QString> &lightTable()
         { QStringLiteral("term-tab-sep"),        QStringLiteral("#0B0D12") },
         { QStringLiteral("term-tab-active-bg"),  QStringLiteral("#282C34") },
         { QStringLiteral("term-tab-close-line"), QStringLiteral("#3A3F4B") },
-        // 标签名前面的状态圆点：绿 = 连接中/正常，红 = 已断开
+        // 标签名前面的状态圆点：
+        //   灰 = SSH 正在连接，绿 = SSH 已连接，红 = 已断开
+        //   本地终端用 nav-cta-bg（蓝色），不单独占一个 token
         { QStringLiteral("term-tab-ok"),         QStringLiteral("#3FB950") },
         { QStringLiteral("term-tab-err"),        QStringLiteral("#F0553D") },
+        { QStringLiteral("term-tab-wait"),       QStringLiteral("#8A93A5") },
 
         // 终端背景保持**全透明**：文字直接画在页面背景（背景图 / 画布）上。
         // 标签栏和选中的标签仍然是不透明的固定深色，这两块不受影响。
@@ -265,6 +268,7 @@ const QHash<QString, QString> &darkTable()
         { QStringLiteral("term-tab-close-line"), QStringLiteral("#3A3F4B") },
         { QStringLiteral("term-tab-ok"),         QStringLiteral("#3FB950") },
         { QStringLiteral("term-tab-err"),        QStringLiteral("#F0553D") },
+        { QStringLiteral("term-tab-wait"),       QStringLiteral("#8A93A5") },
 
         { QStringLiteral("term-bg"),     QStringLiteral("rgba(0, 0, 0, 0)") },
         { QStringLiteral("term-fg"),     QStringLiteral("#D6DAE3") },

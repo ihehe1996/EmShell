@@ -107,10 +107,11 @@ public:
     // 实测窗口照样能缩窄。
 
 private:
-    // 标签名前面的状态圆点：绿 = 连接中/正常，红 = 已断开。
+    // 标签名前面的状态圆点，四种状态：
+    //   蓝 = 本地终端，灰 = SSH 连接中，绿 = SSH 已连接，红 = 已断开。
     // 大小和分组菜单里的色点一致（8px 圆）。
-    // 连接状态存在页容器的 "connected" 属性上，由 TerminalPage 在会话
-    // exited 时改掉；这里按页取，标签拖动后颜色不会串。
+    // 状态存在页容器的 "tabState" 属性上，由 TerminalPage 在 started / exited
+    // 时改掉；这里按页取，标签拖动后颜色不会串。
     void drawTabMarkers()
     {
         auto *tabs = qobject_cast<QTabWidget *>(parentWidget());
@@ -127,9 +128,17 @@ private:
                 continue;
 
             QWidget *page = tabs->widget(i);
-            const bool connected = page && page->property("connected").toBool();
-            const QColor color = Theme::color(
-                connected ? QStringLiteral("term-tab-ok") : QStringLiteral("term-tab-err"));
+            const QString state = page ? page->property("tabState").toString() : QString();
+
+            QColor color;
+            if (state == QLatin1String("local"))
+                color = Theme::color(QStringLiteral("nav-cta-bg"));      // 本地终端：蓝
+            else if (state == QLatin1String("connecting"))
+                color = Theme::color(QStringLiteral("term-tab-wait"));   // 连接中：灰
+            else if (state == QLatin1String("connected"))
+                color = Theme::color(QStringLiteral("term-tab-ok"));     // 已连接：绿
+            else
+                color = Theme::color(QStringLiteral("term-tab-err"));    // 已断开：红
 
             const QRectF dot(r.left() + kTabPaddingLeft,
                              r.top() + (r.height() - kTabMarkerSize) / 2.0,
@@ -553,9 +562,10 @@ TerminalPage::Tab *TerminalPage::createTab(const QString &title)
     tab->title = title;
 
     tab->container = new QWidget;
-    // 状态圆点靠这个属性取色：新开的会话先按绿色算，连接失败 / 断开时
-    // 由 attachSession() 里的 exited 回调改成 false。
-    tab->container->setProperty("connected", true);
+    // 状态圆点靠这个属性取色：local / connecting / connected / disconnected。
+    // 调用方（openLocalSession / openNativeSsh / openConnectionViaCli）会在
+    // 建好标签后立刻覆盖成对应的初始状态。
+    tab->container->setProperty("tabState", QStringLiteral("connecting"));
     tab->view = new TerminalView(tab->container);
 
     auto *terminalWrap = new QWidget(tab->container);
@@ -614,15 +624,23 @@ void TerminalPage::attachSession(Tab *tab, TerminalSession *session)
     tab->session = session;
     tab->view->setSession(session);
 
-    tab->container->setProperty("connected", true);
-
     QPointer<QWidget> container(tab->container);
     connect(session, &TerminalSession::exited, this, [this, container](int) {
-        if (!container)
-            return;
-        container->setProperty("connected", false);
-        m_tabBar->tabBar()->update();
+        setTabState(container, QStringLiteral("disconnected"));
     });
+}
+
+// 状态圆点是四选一：
+//   local        → 蓝色（本地终端）
+//   connecting   → 灰色（SSH 还在握手 / 认证）
+//   connected    → 绿色（SSH 已连上）
+//   disconnected → 红色（连接失败 / 远端断开 / 本地 shell 退出）
+void TerminalPage::setTabState(QWidget *container, const QString &state)
+{
+    if (!container)
+        return;
+    container->setProperty("tabState", state);
+    m_tabBar->tabBar()->update();
 }
 
 // 会话报了窗口标题（OSC 0/2）。**只更新 tooltip，不动标签上的字。**
@@ -658,10 +676,11 @@ void TerminalPage::openLocalSession(const QString &shell)
 
     ++m_untitledCount;
     Tab *tab = createTab(QStringLiteral("本地 %1").arg(m_untitledCount));
+    setTabState(tab->container, QStringLiteral("local"));
     attachSession(tab, session);
     // 进程可能在 start() 之后、挂信号之前就已经退了（命令立刻报错）
     if (!session->isRunning())
-        tab->container->setProperty("connected", false);
+        setTabState(tab->container, QStringLiteral("disconnected"));
 
     m_tabBar->setCurrentIndex(tab->index);
     tab->view->setFocus();
@@ -759,7 +778,14 @@ void TerminalPage::openNativeSsh(const Connection &connection, const SshSession:
     auto *session = new SshSession(options, this);
 
     Tab *tab = createTab(connection.name.isEmpty() ? connection.host : connection.name);
+    setTabState(tab->container, QStringLiteral("connecting"));
     attachSession(tab, session);
+
+    // 握手 / 认证成功、远端 shell 起来之后，圆点才从灰色变成绿色
+    QPointer<QWidget> stateContainer(tab->container);
+    connect(session, &TerminalSession::started, this, [this, stateContainer] {
+        setTabState(stateContainer.data(), QStringLiteral("connected"));
+    });
 
     // 握手 / 认证阶段终端里一个字都没有，先给一行提示。
     // 远端一旦开始输出，这条就自然地留在上方。
@@ -877,9 +903,12 @@ void TerminalPage::openConnectionViaCli(const Connection &connection)
     }
 
     Tab *tab = createTab(connection.name.isEmpty() ? connection.host : connection.name);
+    // 走系统 ssh 客户端时拿不到「认证完成」这个信号，只能按「连接中」显示；
+    // 进程退出（ssh 断开）后由 exited 回调改成红色。
+    setTabState(tab->container, QStringLiteral("connecting"));
     attachSession(tab, session);
     if (!session->isRunning())
-        tab->container->setProperty("connected", false);
+        setTabState(tab->container, QStringLiteral("disconnected"));
 
     // **这条路径不写「正在连接主机 …」。** 系统 ssh 客户端一启动就先发一串
     // 隐藏光标 + 清屏 + 光标归位的控制序列，写在前面的提示会被整屏清掉；

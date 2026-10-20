@@ -72,6 +72,8 @@ private:
     Tab *createTab(const QString &title);
     // 把会话接到标签上，并挂好「断开后把状态圆点变红」的回调
     void attachSession(Tab *tab, TerminalSession *session);
+    // 标签前的状态圆点：local / connecting / connected / disconnected
+    void setTabState(QWidget *container, const QString &state);
     void closeTab(int index);
     void applyTitle(Tab *tab, const QString &title);
     Tab *tabAt(int index) const;
