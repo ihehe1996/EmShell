@@ -636,18 +636,19 @@ QListWidget::item:selected, QTreeWidget::item:selected {
 QMenu {
     background: @bg-elevated;
     border: 1px solid @border-strong;
-    border-radius: 10px;
-    padding: 6px;
+    border-radius: 8px;
+    padding: 5px;
 }
 QMenu::item {
-    padding: 8px 28px 8px 12px;
-    border-radius: 7px;
+    /* 文字用主文本色：菜单是「要读的东西」，不是辅助说明，用 text-dim 在深色底下发灰 */
+    padding: 7px 22px 7px 10px;
+    border-radius: 6px;
     font-size: 13px;
-    color: @text-dim;
+    color: @text;
 }
 QMenu::item:selected { background: @accent-soft; color: @accent-text; }
 QMenu::item:disabled { color: @text-mute; }
-QMenu::separator { height: 1px; background: @border; margin: 6px 8px; }
+QMenu::separator { height: 1px; background: @border-strong; margin: 4px 6px; }
 
 /* ------------------------------------------------------------ 对话框 --- */
 

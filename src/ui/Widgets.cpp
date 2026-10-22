@@ -1089,14 +1089,19 @@ void ConnectionRow::showMenu(const QPoint &globalPos)
 {
     QMenu menu(this);
 
-    QAction *open = menu.addAction(Icons::icon(Icon::Terminal, tokenColor("text-dim"), 16),
-                                   QStringLiteral("打开终端"));
-    QAction *edit = menu.addAction(Icons::icon(Icon::Edit, tokenColor("text-dim"), 16),
-                                   QStringLiteral("编辑"));
-    QAction *copy = menu.addAction(Icons::icon(Icon::Copy, tokenColor("text-dim"), 16),
-                                   QStringLiteral("复制主机地址"));
+    // 图标和文字同一个色阶：常态 text-dim（比文字轻一档），悬停跟着变成 accent-text。
+    // 直接用 Icons::icon 固定 text-dim 的话，高亮时文字变蓝、图标还是灰的，很割裂。
+    const auto itemIcon = [](Icon which) {
+        return statefulIcon(which, tokenColor("text-dim"), tokenColor("accent-text"), 18);
+    };
+
+    QAction *open = menu.addAction(itemIcon(Icon::Terminal), QStringLiteral("打开终端"));
+    QAction *edit = menu.addAction(itemIcon(Icon::Edit), QStringLiteral("编辑"));
+    QAction *copy = menu.addAction(itemIcon(Icon::Copy), QStringLiteral("复制主机地址"));
     menu.addSeparator();
-    QAction *del = menu.addAction(Icons::icon(Icon::Trash, tokenColor("err"), 16),
+    // 删除是危险项，图标始终保留红色，别跟其他项一样变蓝
+    QAction *del = menu.addAction(statefulIcon(Icon::Trash, tokenColor("err"),
+                                               tokenColor("err"), 18),
                                   QStringLiteral("删除"));
 
     QAction *picked = menu.exec(globalPos);
