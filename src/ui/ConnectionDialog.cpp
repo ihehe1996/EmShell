@@ -202,7 +202,7 @@ ConnectionDialog::ConnectionDialog(ConnectionStore *store, KeyStore *keys, QWidg
     auto *lockIcon = new QLabel(noteRow);
     lockIcon->setPixmap(Icons::pixmap(Icon::Lock,
                                       Theme::color(QStringLiteral("nav-group")), 13));
-    auto *note = makeLabel(QStringLiteral("密码用 Windows 账户加密保存"),
+    auto *note = makeLabel(QStringLiteral("密码明文保存在本机配置文件"),
                            "railNote", noteRow);
     note->setWordWrap(true);
     noteLayout->addWidget(lockIcon, 0, Qt::AlignTop);

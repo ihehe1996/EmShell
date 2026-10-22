@@ -103,9 +103,24 @@ void KeyStore::load()
     const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
     f.close();
 
+    // 和 ConnectionStore::load 一样：旧版的 dpapi: 密文读出来后马上重写成明文。
+    // 有解不开的就保持原文件不动，免得把原密文洗掉。
+    bool migrateSecrets = false;
+    bool migrationFailed = false;
     m_keys.clear();
-    for (const QJsonValue &v : doc.object().value(QStringLiteral("keys")).toArray())
-        m_keys << SshKey::fromJson(v.toObject());
+    for (const QJsonValue &v : doc.object().value(QStringLiteral("keys")).toArray()) {
+        const QJsonObject o = v.toObject();
+        const QString stored = o.value(QStringLiteral("passphrase")).toString();
+        if (Secret::looksEncrypted(stored)) {
+            migrateSecrets = true;
+            if (Secret::unprotect(stored).isEmpty())
+                migrationFailed = true;
+        }
+        m_keys << SshKey::fromJson(o);
+    }
+
+    if (migrateSecrets && !migrationFailed)
+        save();
 
     emit keysChanged();
 }

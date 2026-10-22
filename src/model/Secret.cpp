@@ -16,13 +16,8 @@ namespace Secret {
 
 namespace {
 
-// 密文统一加这个前缀，方便和旧版本直接存的明文区分开
+// 旧版本 DPAPI 密文的前缀。现在不再写入，只在读取旧配置时识别。
 constexpr char kPrefix[] = "dpapi:";
-
-QString encodeBlob(const QByteArray &raw)
-{
-    return QString::fromLatin1(kPrefix) + QString::fromLatin1(raw.toBase64());
-}
 
 QByteArray decodeBlob(const QString &value)
 {
@@ -38,38 +33,21 @@ bool looksEncrypted(const QString &value)
     return value.startsWith(QLatin1String(kPrefix));
 }
 
-#ifdef Q_OS_WIN
-
+// 新数据一律原样落盘。想换回加密的话，只改这里和各 Store 里的迁移判断。
 QString protect(const QString &plain)
 {
-    if (plain.isEmpty())
-        return {};
-
-    const QByteArray utf8 = plain.toUtf8();
-
-    DATA_BLOB in{};
-    in.pbData = reinterpret_cast<BYTE *>(const_cast<char *>(utf8.constData()));
-    in.cbData = static_cast<DWORD>(utf8.size());
-
-    DATA_BLOB out{};
-    const BOOL ok = ::CryptProtectData(&in,
-                                       L"EmShell connection secret",
-                                       nullptr, nullptr, nullptr,
-                                       CRYPTPROTECT_UI_FORBIDDEN,
-                                       &out);
-    if (!ok) {
-        qWarning("EmShell: CryptProtectData 失败，密码没有保存");
-        return {};
-    }
-
-    const QByteArray blob(reinterpret_cast<const char *>(out.pbData), int(out.cbData));
-    ::LocalFree(out.pbData);
-    return encodeBlob(blob);
+    return plain;
 }
 
-QString unprotect(const QString &encoded)
+#ifdef Q_OS_WIN
+
+QString unprotect(const QString &value)
 {
-    const QByteArray blob = decodeBlob(encoded);
+    // 新格式就是明文，原样返回
+    if (!looksEncrypted(value))
+        return value;
+
+    const QByteArray blob = decodeBlob(value);
     if (blob.isEmpty())
         return {};
 
@@ -81,8 +59,8 @@ QString unprotect(const QString &encoded)
     const BOOL ok = ::CryptUnprotectData(&in, nullptr, nullptr, nullptr, nullptr,
                                          CRYPTPROTECT_UI_FORBIDDEN, &out);
     if (!ok) {
-        // 最常见的原因：配置文件是从别的机器/别的账户拷过来的
-        qWarning("EmShell: 密码解不开（多半是换了机器或换了 Windows 账户），需要重新输入");
+        // 最常见的原因：旧配置是从别的机器/账户拷过来的
+        qWarning("EmShell: 旧版 DPAPI 密码解不开（多半是换了机器或 Windows 账户），需要重新输入");
         return {};
     }
 
@@ -92,19 +70,14 @@ QString unprotect(const QString &encoded)
     return plain;
 }
 
-#else // 非 Windows：明确退化，不假装安全
+#else // 非 Windows：旧版 DPAPI 密文解不开，明文照常返回
 
-QString protect(const QString &plain)
+QString unprotect(const QString &value)
 {
-    if (plain.isEmpty())
-        return {};
-    return encodeBlob(plain.toUtf8());
-}
-
-QString unprotect(const QString &encoded)
-{
-    const QByteArray blob = decodeBlob(encoded);
-    return QString::fromUtf8(blob);
+    if (!looksEncrypted(value))
+        return value;
+    qWarning("EmShell: 旧版 DPAPI 密文只能在 Windows 上解，需要重新输入密码");
+    return {};
 }
 
 #endif

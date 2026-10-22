@@ -98,10 +98,10 @@ void ConnectionFormPanel::buildUi()
                                      : QStringLiteral("显示密码"));
     });
 
-    // 标签写短，加密方式挪进 tooltip。QCheckBox 的 minimumSizeHint 就是
+    // 标签写短，存储方式挪进 tooltip。QCheckBox 的 minimumSizeHint 就是
     // 那行字的宽度，且不能省略也不能换行，写长了会把整个表单的最小宽度顶大。
     m_savePassword = new CheckBox(QStringLiteral("保存密码"), this);
-    m_savePassword->setToolTip(QStringLiteral("密码会用当前 Windows 账户加密（DPAPI）后写入配置文件"));
+    m_savePassword->setToolTip(QStringLiteral("密码会明文写入本机配置文件"));
     m_savePassword->setChecked(true);
 
     m_group = new SelectBox(this);

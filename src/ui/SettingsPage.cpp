@@ -457,8 +457,8 @@ SettingsPage::SettingsPage(ConnectionStore *store, QWidget *parent)
     // 版本号取 applicationVersion()，别在这儿写死 —— 写死过一次，改版本时漏了这里
     auto *aboutText = makeLabel(
         QStringLiteral("EmShell v%1\n\n"
-                       "连接密码用 Windows DPAPI 加密后写入配置文件，密文绑定当前 Windows "
-                       "账户，换机器或换账户就解不开（这是有意为之）。\n\n"
+                       "连接密码和私钥口令以明文保存在本机配置文件中，方便备份和迁移；"
+                       "任何能读到该文件的程序也能看到它们，请不要连同密码一起发给别人。\n\n"
                        "SSH 走的是内置的原生实现（libssh2），不依赖系统装没装 OpenSSH，"
                        "所以密码可以自动填写，也能用密钥登录。")
             .arg(QCoreApplication::applicationVersion()),

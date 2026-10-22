@@ -85,7 +85,7 @@ QJsonObject Connection::toJson() const
     o[QStringLiteral("username")]     = username;
     o[QStringLiteral("auth")]         = authTypeToString(auth);
     o[QStringLiteral("savePassword")] = savePassword;
-    // 密码经 DPAPI 加密后再落盘，配置文件里看不到明文
+    // 密码按原样落盘（现在明文保存，见 model/Secret.h 的说明）
     o[QStringLiteral("password")]     = savePassword ? Secret::protect(password) : QString();
     o[QStringLiteral("keyId")]        = keyId;
     o[QStringLiteral("groupId")]      = groupId;

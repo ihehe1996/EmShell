@@ -20,7 +20,7 @@ struct SshKey
     QString publicKeyText;      // .pub 文件的内容，可能为空
     QString type;               // ed25519 / rsa / ecdsa ...
     QString comment;
-    QString passphrase;         // 经 Secret::protect 加密
+    QString passphrase;         // 明文保存，写盘前走一次 Secret::protect()
     QString fingerprint;        // 形如 SHA256:xxxx，调用 ssh-keygen 算出来的
     QDateTime addedAt;
 

@@ -1,5 +1,7 @@
 #include "model/ConnectionStore.h"
 
+#include "model/Secret.h"
+
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
@@ -55,9 +57,27 @@ void ConnectionStore::load()
 
     const QJsonObject root = doc.object();
 
+    // 旧版本把密码存成 dpapi: 密文。现在统一存明文，加载时顺手把旧文件
+    // 重写一遍 —— 否则用户不编辑连接的话，文件里会一直留着密文，
+    // 导出 / 换机器都不方便。
+    //
+    // **只要有一条解不开就不要重写**：那多半是从别的机器 / 账户拷过来的，
+    // 原密文拷回原机器还能用；重写会把解不开的那几条洗成空密码。
+    bool migrateSecrets = false;
+    bool migrationFailed = false;
+
     m_connections.clear();
-    for (const QJsonValue &v : root.value(QStringLiteral("connections")).toArray())
-        m_connections << Connection::fromJson(v.toObject());
+    for (const QJsonValue &v : root.value(QStringLiteral("connections")).toArray()) {
+        const QJsonObject o = v.toObject();
+        const QString stored = o.value(QStringLiteral("password")).toString();
+        if (Secret::looksEncrypted(stored)) {
+            migrateSecrets = true;
+            // dpapi: 前缀只可能来自非空密码（空密码不加密），解出空串就是失败
+            if (Secret::unprotect(stored).isEmpty())
+                migrationFailed = true;
+        }
+        m_connections << Connection::fromJson(o);
+    }
 
     m_groups.clear();
     for (const QJsonValue &v : root.value(QStringLiteral("groups")).toArray())
@@ -77,6 +97,9 @@ void ConnectionStore::load()
         }
         m_history << entry;
     }
+
+    if (migrateSecrets && !migrationFailed)
+        save();
 
     emit connectionsChanged();
     emit groupsChanged();
