@@ -336,6 +336,7 @@ public:
 signals:
     void connectRequested(const QString &id);
     void editRequested(const QString &id);
+    void manageLinksRequested(const QString &id);
     void deleteRequested(const QString &id);
     void favoriteToggled(const QString &id);
     void copyHostRequested(const QString &id);
@@ -411,6 +412,7 @@ public:
 signals:
     void connectRequested(const QString &id);
     void editRequested(const QString &id);
+    void manageLinksRequested(const QString &id);
     void deleteRequested(const QString &id);
     void favoriteToggled(const QString &id);
     void copyHostRequested(const QString &id);

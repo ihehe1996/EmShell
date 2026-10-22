@@ -7,6 +7,7 @@
 #include <QAbstractItemView>
 #include <QContextMenuEvent>
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QHBoxLayout>
 #include <QLinearGradient>
 #include <QListView>
@@ -19,6 +20,7 @@
 #include <QStyleOptionButton>
 #include <QStyleOptionViewItem>
 #include <QStyledItemDelegate>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include <utility>
@@ -64,6 +66,34 @@ QIcon statefulIcon(Icon which, const QColor &normal, const QColor &hover, int si
     ic.addPixmap(Icons::pixmap(which, hover, size), QIcon::Normal, QIcon::On);
     return ic;
 }
+
+// 子菜单的位置由 Qt 按「动作矩形」的右边缘算，而 QSS 给 QMenu 留了 5px 内边距，
+// 那个边缘在菜单窗口里面 —— 于是二级菜单会压在一级菜单右边那一圈上。
+// 这里在弹出前把它推到一级菜单的真实右边缘：挨着但不重叠（翻到左边时同理）。
+class AlignedMenu : public QMenu
+{
+public:
+    explicit AlignedMenu(QWidget *parent = nullptr) : QMenu(parent) {}
+
+protected:
+    void showEvent(QShowEvent *event) override
+    {
+        QMenu::showEvent(event);
+
+        QWidget *host = parentWidget();
+        if (!host)
+            return;
+
+        const int hostLeft = host->mapToGlobal(QPoint(0, 0)).x();
+        const int hostRight = host->mapToGlobal(QPoint(host->width(), 0)).x();
+
+        int targetX = (x() >= hostLeft) ? qMax(x(), hostRight)   // 右侧展开
+                                        : hostLeft - width();    // 翻到左边
+        const QRect avail = host->screen()->availableGeometry();
+        targetX = qBound(avail.left(), targetX, avail.right() - width() + 1);
+        move(targetX, y());
+    }
+};
 
 // 相对时间：几分钟前 / 几小时前 / 几天前
 QString humanizeSince(const QDateTime &when)
@@ -1097,6 +1127,30 @@ void ConnectionRow::showMenu(const QPoint &globalPos)
 
     QAction *open = menu.addAction(itemIcon(Icon::Terminal), QStringLiteral("打开终端"));
     QAction *edit = menu.addAction(itemIcon(Icon::Edit), QStringLiteral("编辑"));
+
+    // 查看网址：第一项固定是「管理网址」，用户添加的网址按顺序排在它下面，
+    // 点一条用系统浏览器打开。还没添加过网址时，子菜单里就只剩管理入口。
+    auto *linksMenu = new AlignedMenu(&menu);
+    linksMenu->setTitle(QStringLiteral("查看网址"));
+    linksMenu->setIcon(itemIcon(Icon::Link));
+    linksMenu->setToolTipsVisible(true);
+    menu.addMenu(linksMenu);
+
+    QAction *manageLinks = linksMenu->addAction(itemIcon(Icon::Edit),
+                                                QStringLiteral("管理网址"));
+    if (!m_connection.links.isEmpty()) {
+        linksMenu->addSeparator();
+        for (const ConnectionLink &link : m_connection.links) {
+            const QString label = link.name.isEmpty() ? link.url : link.name;
+            const QString target = link.url;
+            QAction *act = linksMenu->addAction(itemIcon(Icon::Globe), label);
+            act->setToolTip(target);
+            connect(act, &QAction::triggered, this, [target] {
+                QDesktopServices::openUrl(QUrl::fromUserInput(target));
+            });
+        }
+    }
+
     QAction *copy = menu.addAction(itemIcon(Icon::Copy), QStringLiteral("复制主机地址"));
     menu.addSeparator();
     // 删除是危险项，图标始终保留红色，别跟其他项一样变蓝
@@ -1108,10 +1162,11 @@ void ConnectionRow::showMenu(const QPoint &globalPos)
     if (!picked)
         return;
 
-    if (picked == open)       emit enterTerminalRequested(m_connection.id);
-    else if (picked == edit)  emit editRequested(m_connection.id);
-    else if (picked == copy)  emit copyHostRequested(m_connection.id);
-    else if (picked == del)   emit deleteRequested(m_connection.id);
+    if (picked == open)             emit enterTerminalRequested(m_connection.id);
+    else if (picked == edit)        emit editRequested(m_connection.id);
+    else if (picked == manageLinks) emit manageLinksRequested(m_connection.id);
+    else if (picked == copy)        emit copyHostRequested(m_connection.id);
+    else if (picked == del)         emit deleteRequested(m_connection.id);
 }
 
 // --------------------------------------------------------- ConnectionList ---
@@ -1382,6 +1437,8 @@ void ConnectionList::rebuild()
 
         connect(row, &ConnectionRow::connectRequested, this, &ConnectionList::connectRequested);
         connect(row, &ConnectionRow::editRequested, this, &ConnectionList::editRequested);
+        connect(row, &ConnectionRow::manageLinksRequested,
+                this, &ConnectionList::manageLinksRequested);
         connect(row, &ConnectionRow::deleteRequested, this, &ConnectionList::deleteRequested);
         connect(row, &ConnectionRow::favoriteToggled, this, &ConnectionList::favoriteToggled);
         connect(row, &ConnectionRow::copyHostRequested, this, &ConnectionList::copyHostRequested);

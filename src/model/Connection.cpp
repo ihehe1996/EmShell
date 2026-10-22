@@ -24,6 +24,22 @@ AuthType authTypeFromString(const QString &s)
     return AuthType::Password;
 }
 
+ConnectionLink ConnectionLink::fromJson(const QJsonObject &o)
+{
+    ConnectionLink link;
+    link.name = o.value(QStringLiteral("name")).toString();
+    link.url  = o.value(QStringLiteral("url")).toString();
+    return link;
+}
+
+QJsonObject ConnectionLink::toJson() const
+{
+    QJsonObject o;
+    o[QStringLiteral("name")] = name;
+    o[QStringLiteral("url")]  = url;
+    return o;
+}
+
 Connection::Connection()
     : id(QUuid::createUuid().toString(QUuid::WithoutBraces))
     , createdAt(QDateTime::currentDateTime())
@@ -76,6 +92,12 @@ QJsonObject Connection::toJson() const
     o[QStringLiteral("note")]         = note;
     o[QStringLiteral("favorite")]     = favorite;
     o[QStringLiteral("tags")]         = QJsonArray::fromStringList(tags);
+
+    QJsonArray linkArray;
+    for (const ConnectionLink &link : links)
+        linkArray.append(link.toJson());
+    o[QStringLiteral("links")]        = linkArray;
+
     o[QStringLiteral("createdAt")]    = createdAt.toString(Qt::ISODate);
     o[QStringLiteral("lastUsedAt")]   = lastUsedAt.toString(Qt::ISODate);
     o[QStringLiteral("useCount")]     = useCount;
@@ -103,6 +125,11 @@ Connection Connection::fromJson(const QJsonObject &o)
     c.favorite     = o.value(QStringLiteral("favorite")).toBool(false);
     for (const QJsonValue &v : o.value(QStringLiteral("tags")).toArray())
         c.tags << v.toString();
+    for (const QJsonValue &v : o.value(QStringLiteral("links")).toArray()) {
+        const ConnectionLink link = ConnectionLink::fromJson(v.toObject());
+        if (!link.url.isEmpty())
+            c.links << link;
+    }
     c.createdAt    = QDateTime::fromString(o.value(QStringLiteral("createdAt")).toString(), Qt::ISODate);
     c.lastUsedAt   = QDateTime::fromString(o.value(QStringLiteral("lastUsedAt")).toString(), Qt::ISODate);
     c.useCount     = o.value(QStringLiteral("useCount")).toInt(0);

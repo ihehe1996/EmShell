@@ -99,6 +99,8 @@ qt_add_executable(EmShell WIN32
     src/ui/HistoryPage.cpp
     src/ui/KeysPage.h
     src/ui/KeysPage.cpp
+    src/ui/LinkDialog.h
+    src/ui/LinkDialog.cpp
     src/ui/SettingsPage.h
     src/ui/SettingsPage.cpp
     src/ui/UpdatePage.h

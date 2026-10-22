@@ -64,7 +64,7 @@ int main(int argc, char *argv[])
 
     // 启动时查一次更新。查到新版本由 MainWindow 把对话框摆出来；
     // 延迟这一会儿是为了别和窗口初始化抢时间，也不拖慢冷启动。
-    QTimer::singleShot(Em::updateStartupDelayMs(), &window,
+    QTimer::singleShot(Em:: updateStartupDelayMs(), &window,
                        &Em::MainWindow::startSilentUpdateCheck);
 
     return app.exec();

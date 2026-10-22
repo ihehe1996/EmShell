@@ -5,6 +5,7 @@
 #include "model/KeyStore.h"
 #include "ui/ConnectionDialog.h"
 #include "ui/IconProvider.h"
+#include "ui/LinkDialog.h"
 #include "ui/Widgets.h"
 
 #include <QApplication>
@@ -80,6 +81,25 @@ ConnectionsPage::ConnectionsPage(ConnectionStore *store, KeyStore *keys, QWidget
         }
     });
     connect(m_list, &ConnectionList::editRequested, this, &ConnectionsPage::openEditConnection);
+    connect(m_list, &ConnectionList::manageLinksRequested, this, [this](const QString &id) {
+        if (!m_store)
+            return;
+        const Connection *c = m_store->find(id);
+        if (!c)
+            return;
+
+        QVector<ConnectionLink> links;
+        if (!LinkDialog::manage(*c, this, &links))
+            return;
+
+        // 对话框改的是副本，这里再落库；connectionsChanged 会让列表自己刷新
+        Connection updated = *c;
+        updated.links = links;
+        m_store->updateConnection(updated);
+        emit statusMessage(QStringLiteral("已保存「%1」的 %2 条网址")
+                               .arg(updated.name)
+                               .arg(links.size()));
+    });
     connect(m_list, &ConnectionList::deleteRequested, this, [this](const QString &id) {
         if (m_store) {
             const Connection *c = m_store->find(id);

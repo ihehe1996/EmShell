@@ -5,6 +5,7 @@
 #include <QString>
 #include <QStringList>
 #include <QUuid>
+#include <QVector>
 
 namespace Em {
 
@@ -19,6 +20,16 @@ enum class AuthType {
 
 QString authTypeToString(AuthType t);
 AuthType authTypeFromString(const QString &s);
+
+// 连接上挂的一条网址。由「管理链接」维护，跟着连接一起落盘。
+struct ConnectionLink
+{
+    QString name;       // 显示名；空时用 url 顶上
+    QString url;
+
+    QJsonObject toJson() const;
+    static ConnectionLink fromJson(const QJsonObject &o);
+};
 
 // 一条连接记录
 struct Connection
@@ -36,6 +47,7 @@ struct Connection
     QString note;
     bool favorite = false;
     QStringList tags;
+    QVector<ConnectionLink> links;   // 这台机器相关的网址（后台、文档……）
     QDateTime createdAt;
     QDateTime lastUsedAt;
     int useCount = 0;
