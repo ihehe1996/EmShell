@@ -5,17 +5,20 @@
 #include "ui/ConnectionProbe.h"
 
 #include <QAbstractItemView>
-#include <QListView>
-#include <QStyleOptionViewItem>
-#include <QStyledItemDelegate>
+#include <QContextMenuEvent>
 #include <QDateTime>
 #include <QHBoxLayout>
 #include <QLinearGradient>
+#include <QListView>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QScreen>
 #include <QShowEvent>
 #include <QStyle>
+#include <QStyleOptionButton>
+#include <QStyleOptionViewItem>
+#include <QStyledItemDelegate>
 #include <QVBoxLayout>
 
 #include <utility>
@@ -368,10 +371,10 @@ void PillButton::refreshIcon()
 
 namespace {
 
-// 去掉列表项外面那圈框。
+// 去掉列表项外面那圈焦点框。
 //
 // 组合框弹开时，当前项只是「当前」不是「选中」，Fusion 会给它画一圈焦点框，
-// 看起来就是套了个脏兮兮的黑边。这个框 **QSS 的 outline: none 关不掉**
+// 看起来像套了个脏兮兮的黑边。这个框 **QSS 的 outline: none 关不掉**
 // （试过，视图和 ::item 两处都写了，不管用）。把 State_HasFocus 摘掉再交给
 // 默认绘制，样式就不会再画它了。
 class PlainItemDelegate : public QStyledItemDelegate
@@ -390,7 +393,7 @@ public:
 
 // 箭头区的大小，和 app.qss 里 QComboBox::drop-down 的 width 是同一个值，
 // 改一个要改另一个。
-constexpr int kArrowZone = 30;
+constexpr int kArrowZone = 32;
 constexpr int kArrowSize = 14;
 
 } // namespace
@@ -401,19 +404,16 @@ SelectBox::SelectBox(QWidget *parent)
     setCursor(Qt::PointingHandCursor);
 
     // 弹出列表的样式**必须挂到列表自己身上**，写进 app.qss 不管用。
+    // 弹出列表挂在一个独立的弹出容器上，全局那条匹配链在这里靠不住。
     //
-    // 试过三种写法，全局样式表一条都不生效：`QComboBox QAbstractItemView`（祖先链）、
-    // `#ComboPopup`（objectName）、以及给 view 挂 objectName 再用 ID 选 —— 弹出列表
-    // 挂在一个独立的弹出容器上，全局那条匹配链在这里靠不住。
-    // 直接 setStyleSheet 到控件自己身上才稳。
-    //
-    // 颜色还是走 Theme::color() 取 token，不要在这里写死色值。
+    // 颜色走 Theme::color() 取 token，不要写死色值。
     const QString bg = Theme::color(QStringLiteral("bg-elevated")).name();
     const QString line = Theme::color(QStringLiteral("border-strong")).name();
     const QString text = Theme::color(QStringLiteral("text-dim")).name();
-    // accent-soft 带 alpha（背景图要透上来），这里要保留它 ——
-    // QColor::name() 会把 alpha 丢掉，选中项会变成一块刺眼的实心亮蓝。
+    const QString textHover = Theme::color(QStringLiteral("text")).name();
+    // 这两个带 alpha（背景图要透上来），用 HexArgb 保住透明度。
     const QString selBg = Theme::color(QStringLiteral("accent-soft")).name(QColor::HexArgb);
+    const QString hoverBg = Theme::color(QStringLiteral("bg-hover")).name(QColor::HexArgb);
     const QString selText = Theme::color(QStringLiteral("accent-text")).name();
 
     // 去掉当前项那圈焦点框，只能用 delegate，QSS 关不掉
@@ -421,11 +421,12 @@ SelectBox::SelectBox(QWidget *parent)
 
     // 弹出列表外面还套着一层 QComboBox 自己的弹出容器，它默认会画一圈方框。
     // 那个容器从外面拿不到（没有公开类型），只能顺着 view 的父控件摸过去，
-    // 把底色和边框都设在它身上，里面那个列表就保持透明 —— 这样整块弹出
-    // 只有一条边框，不会叠出「双线」。
+    // 把底色 / 边框 / 圆角设在它身上，里面的列表保持透明 —— 这样整块弹出
+    // 只有一条边框，圆角也能露出来。
     if (QWidget *container = view()->parentWidget()) {
         container->setStyleSheet(QStringLiteral("QFrame { background: %1;"
-                                                "         border: 1px solid %2; }")
+                                                "         border: 1px solid %2;"
+                                                "         border-radius: 10px; }")
                                      .arg(bg, line));
     }
 
@@ -433,46 +434,75 @@ SelectBox::SelectBox(QWidget *parent)
         QStringLiteral("QListView {"
                        "  background: transparent;"   // 底色交给外面那层容器
                        "  border: none;"
-                       "  padding: 5px;"
+                       "  padding: 6px;"
                        "  outline: none;"
                        "  color: %1;"
                        "}"
                        "QListView::item {"
-                       "  min-height: 30px;"
+                       "  min-height: 34px;"
                        "  padding-left: 10px;"
                        "  padding-right: 10px;"
-                       "  border-radius: 6px;"
+                       "  border-radius: 7px;"
                        "  color: %1;"
                        "}"
-                       "QListView::item:selected {"
+                       "QListView::item:hover {"
                        "  background: %2;"
                        "  color: %3;"
+                       "}"
+                       "QListView::item:selected {"
+                       "  background: %4;"
+                       "  color: %5;"
                        "}")
-            .arg(text, selBg, selText));
+            .arg(text, hoverBg, textHover, selBg, selText));
 }
 
-// 弹出列表的行距必须在**每次弹出之前**压成 0，否则相邻两项会重叠。
-//
-// 现象：每一项自己的矩形是按 QSS 的 min-height: 30px 算的，但排行用的间距
-// 取的是「未设」状态的样式默认值，算出来是负的 —— 每项高 30、相邻两项的 y
-// 却只差 16，于是三条文字直接叠在一起，弹出列表上半截挤成一团、下半截空着
-// 一大块。
-//
-// 为什么不能写在构造函数里：那时候设过之后，样式表还要再处理一轮 view
-// （挂 QSS 本身也算），这一步会把这个间距打回样式默认值 —— 构造函数里写了
-// 等于白写，实测一点用都没有。所以放到弹出前一刻设，这时候没人再动它了。
+// 行距必须在**每次弹出之前**压成 0，否则相邻两项会重叠。
+// 每项的高度是 QSS 的 min-height 算的，排行间距却取样式默认值（算出来是负的），
+// 写在构造函数里会被之后的一轮样式处理打回默认，等于白写。
 void SelectBox::showPopup()
 {
     if (auto *list = qobject_cast<QListView *>(view()))
         list->setSpacing(0);
+
     QComboBox::showPopup();
+
+    // QComboBox 默认把「当前项」对齐到框体上，整个列表正好盖住输入框。
+    // 这里改成贴着框体下沿弹出；下方放不下时才翻到上方。
+    QWidget *container = view() ? view()->parentWidget() : nullptr;
+    if (!container)
+        return;
+
+    const QRect combo(mapToGlobal(QPoint(0, 0)), size());
+    const QRect available = screen()->availableGeometry();
+    constexpr int kGap = 0;
+
+    int top = combo.bottom() + 1 + kGap;
+    if (top + container->height() > available.bottom())
+        top = combo.top() - container->height() - kGap;
+    top = qBound(available.top(),
+                 top,
+                 qMax(available.top(), available.bottom() - container->height()));
+
+    int left = combo.left();
+    left = qBound(available.left(),
+                  left,
+                  qMax(available.left(), available.right() - container->width()));
+
+    container->move(left, top);
 }
 
 void SelectBox::paintEvent(QPaintEvent *event)
 {
     QComboBox::paintEvent(event);
 
-    const QColor color = m_hover ? tokenColor("text-dim") : tokenColor("text-mute");
+    QColor color = tokenColor("text-mute");
+    if (!isEnabled())
+        color = tokenColor("border-strong");   // 禁用时箭头也要跟着暗下去
+    else if (hasFocus())
+        color = tokenColor("accent-text");
+    else if (m_hover)
+        color = tokenColor("text-dim");
+
     const int x = width() - kArrowZone + (kArrowZone - kArrowSize) / 2;
     const int y = (height() - kArrowSize) / 2;
 
@@ -492,6 +522,34 @@ void SelectBox::leaveEvent(QEvent *event)
     m_hover = false;
     update();
     QComboBox::leaveEvent(event);
+}
+
+// -------------------------------------------------------------- CheckBox ---
+
+CheckBox::CheckBox(const QString &text, QWidget *parent)
+    : QCheckBox(text, parent)
+{
+}
+
+void CheckBox::paintEvent(QPaintEvent *event)
+{
+    QCheckBox::paintEvent(event);
+
+    // QSS 只把选中态涂成一块实心强调色，对勾得自己补。
+    if (!isChecked())
+        return;
+
+    QStyleOptionButton option;
+    option.initFrom(this);
+    const QRect box = style()->subElementRect(QStyle::SE_CheckBoxIndicator, &option, this);
+    if (!box.isValid())
+        return;
+
+    const QPixmap check = Icons::pixmap(Icon::Check, QColor(Qt::white), 12);
+    const QSizeF size = check.deviceIndependentSize();
+    QPainter painter(this);
+    painter.drawPixmap(QPointF(box.center().x() - size.width() / 2,
+                               box.center().y() - size.height() / 2), check);
 }
 
 // ------------------------------------------------------------- NavButton ---
@@ -933,26 +991,7 @@ ConnectionRow::ConnectionRow(const Connection &connection, const QString &groupN
         emit favoriteToggled(m_connection.id);
     });
     connect(m_more, &QPushButton::clicked, this, [this] {
-        QMenu menu(this);
-
-        QAction *open = menu.addAction(Icons::icon(Icon::Terminal, tokenColor("text-dim"), 16),
-                                       QStringLiteral("打开终端"));
-        QAction *edit = menu.addAction(Icons::icon(Icon::Edit, tokenColor("text-dim"), 16),
-                                       QStringLiteral("编辑"));
-        QAction *copy = menu.addAction(Icons::icon(Icon::Copy, tokenColor("text-dim"), 16),
-                                       QStringLiteral("复制主机地址"));
-        menu.addSeparator();
-        QAction *del = menu.addAction(Icons::icon(Icon::Trash, tokenColor("err"), 16),
-                                      QStringLiteral("删除"));
-
-        QAction *picked = menu.exec(m_more->mapToGlobal(QPoint(-110, m_more->height() + 4)));
-        if (!picked)
-            return;
-
-        if (picked == open)       emit enterTerminalRequested(m_connection.id);
-        else if (picked == edit)  emit editRequested(m_connection.id);
-        else if (picked == copy)  emit copyHostRequested(m_connection.id);
-        else if (picked == del)   emit deleteRequested(m_connection.id);
+        showMenu(m_more->mapToGlobal(QPoint(-110, m_more->height() + 4)));
     });
 
     refresh();
@@ -1038,6 +1077,36 @@ void ConnectionRow::mouseDoubleClickEvent(QMouseEvent *event)
     if (event->button() == Qt::LeftButton)
         emit connectRequested(m_connection.id);
     QFrame::mouseDoubleClickEvent(event);
+}
+
+void ConnectionRow::contextMenuEvent(QContextMenuEvent *event)
+{
+    showMenu(event->globalPos());
+    event->accept();
+}
+
+void ConnectionRow::showMenu(const QPoint &globalPos)
+{
+    QMenu menu(this);
+
+    QAction *open = menu.addAction(Icons::icon(Icon::Terminal, tokenColor("text-dim"), 16),
+                                   QStringLiteral("打开终端"));
+    QAction *edit = menu.addAction(Icons::icon(Icon::Edit, tokenColor("text-dim"), 16),
+                                   QStringLiteral("编辑"));
+    QAction *copy = menu.addAction(Icons::icon(Icon::Copy, tokenColor("text-dim"), 16),
+                                   QStringLiteral("复制主机地址"));
+    menu.addSeparator();
+    QAction *del = menu.addAction(Icons::icon(Icon::Trash, tokenColor("err"), 16),
+                                  QStringLiteral("删除"));
+
+    QAction *picked = menu.exec(globalPos);
+    if (!picked)
+        return;
+
+    if (picked == open)       emit enterTerminalRequested(m_connection.id);
+    else if (picked == edit)  emit editRequested(m_connection.id);
+    else if (picked == copy)  emit copyHostRequested(m_connection.id);
+    else if (picked == del)   emit deleteRequested(m_connection.id);
 }
 
 // --------------------------------------------------------- ConnectionList ---

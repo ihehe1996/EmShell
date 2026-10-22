@@ -1035,6 +1035,63 @@ int runSettingsShot()
 }
 
 // ---------------------------------------------------------------------------
+// 下拉框弹出列表截图。用来确认弹层的底色、圆角、行距和选中色都对。
+//   --comboui
+// ---------------------------------------------------------------------------
+int runComboShot()
+{
+    QFile::remove(QStringLiteral("selftest.log"));
+    log(QStringLiteral("== 下拉框截图 =="));
+
+    ConnectionStore store;
+    store.load();
+    KeyStore keys;
+    keys.load();
+
+    MainWindow window(&store, &keys);
+    window.resize(1280, 800);
+    window.show();
+
+    if (auto *page = window.findChild<SettingsPage *>()) {
+        if (auto *stack = window.findChild<QStackedWidget *>())
+            stack->setCurrentWidget(page);
+    }
+
+    QTimer::singleShot(700, &window, [&window] {
+        SelectBox *box = nullptr;
+        if (auto *page = window.findChild<SettingsPage *>()) {
+            for (SelectBox *candidate : page->findChildren<SelectBox *>()) {
+                if (candidate->isVisible()) {
+                    box = candidate;
+                    break;
+                }
+            }
+        }
+        if (!box) {
+            log(QStringLiteral("  FAIL: 设置页没找到可见的下拉框"));
+            qApp->quit();
+            return;
+        }
+
+        box->showPopup();
+        QTimer::singleShot(500, [] {
+            QWidget *popup = QApplication::activePopupWidget();
+            if (popup && popup->grab().save(QStringLiteral("combopopui.png")))
+                log(QStringLiteral("  已保存 combopopui.png"));
+            else
+                log(QStringLiteral("  FAIL: 下拉列表没弹出来"));
+            qApp->quit();
+        });
+    });
+
+    QTimer::singleShot(6000, [] { qApp->quit(); });
+    qApp->exec();
+
+    flushLog();
+    return g_fail == 0 ? 0 : 1;
+}
+
+// ---------------------------------------------------------------------------
 // 连通性检测截图：等探测跑完（最多几秒），把窗口抓下来。
 //   --probeui
 // ---------------------------------------------------------------------------
@@ -1579,6 +1636,7 @@ bool isSelfTestRequest(const QStringList &arguments)
            || arguments.contains(QStringLiteral("--updateui"))
            || arguments.contains(QStringLiteral("--dialogui"))
            || arguments.contains(QStringLiteral("--settingsui"))
+           || arguments.contains(QStringLiteral("--comboui"))
            || arguments.contains(QStringLiteral("--updatepageui"))
            || arguments.contains(QStringLiteral("--probeui"))
            || arguments.contains(QStringLiteral("--termui"))
@@ -1608,6 +1666,8 @@ int runSelfTest(const QStringList &arguments)
         return runProbeShot();
     if (arguments.contains(QStringLiteral("--settingsui")))
         return runSettingsShot();
+    if (arguments.contains(QStringLiteral("--comboui")))
+        return runComboShot();
     if (arguments.contains(QStringLiteral("--updatepageui")))
         return runUpdatePageShot();
     if (arguments.contains(QStringLiteral("--dialogui")))

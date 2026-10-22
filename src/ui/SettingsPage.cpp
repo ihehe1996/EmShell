@@ -249,7 +249,7 @@ SettingsPage::SettingsPage(ConnectionStore *store, QWidget *parent)
     auto *backgroundTitle = makeLabel(QStringLiteral("背景图"), "sectionTitle", backgroundCard);
 
     // 开关放在卡片标题右边：关掉之后图片和蒙层设置都留着，只是不再显示。
-    m_backgroundEnabled = new QCheckBox(QStringLiteral("启用背景图"), backgroundCard);
+    m_backgroundEnabled = new CheckBox(QStringLiteral("启用背景图"), backgroundCard);
     m_backgroundEnabled->setObjectName(QStringLiteral("BackgroundEnabled"));
     connect(m_backgroundEnabled, &QCheckBox::toggled, this, [this](bool on) {
         QSettings settings;

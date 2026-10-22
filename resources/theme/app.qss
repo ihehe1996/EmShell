@@ -467,19 +467,18 @@ QComboBox {
     color: @text;
 }
 QComboBox:hover { border-color: @text-mute; }
-QComboBox:focus { border-color: @accent; }
-/* :on 是「列表正弹着」。保持高亮，让用户知道点开的是哪一个 */
-QComboBox:on { border-color: @accent; }
+QComboBox:focus, QComboBox:on { border-color: @accent; }
+QComboBox:disabled { color: @text-mute; background: @bg-active; border-color: @border; }
 
 /* 箭头区。width 和 Widgets.cpp 里的 kArrowZone 是同一个值。 */
 QComboBox::drop-down {
     subcontrol-origin: border;
     subcontrol-position: center right;
-    width: 30px;
+    width: 32px;
     border: none;
     background: transparent;
 }
-/* 原生箭头关掉 —— 箭头由 SelectBox::paintEvent 自己画，理由见那边的注释 */
+/* 原生箭头关掉 —— 箭头由 SelectBox::paintEvent 自己画，颜色能跟着主题走 */
 QComboBox::down-arrow { image: none; width: 0px; height: 0px; }
 
 /* 注意：下拉框**弹出列表**的样式不在这里。
@@ -488,6 +487,7 @@ QComboBox::down-arrow { image: none; width: 0px; height: 0px; }
    SelectBox 构造函数里、直接 setStyleSheet 到 view 上，改那儿去。 */
 
 QCheckBox { font-size: 13px; color: @text-dim; spacing: 8px; }
+QCheckBox:disabled { color: @text-mute; }
 QCheckBox::indicator {
     width: 17px; height: 17px;
     border: 1px solid @border-strong;
@@ -496,6 +496,8 @@ QCheckBox::indicator {
 }
 QCheckBox::indicator:hover   { border-color: @accent; }
 QCheckBox::indicator:checked { background: @accent; border-color: @accent; }
+QCheckBox::indicator:disabled { background: @bg-active; border-color: @border; }
+QCheckBox::indicator:checked:disabled { background: @text-mute; border-color: @text-mute; }
 
 QLabel[role="fieldLabel"] {
     font-size: 12px;
@@ -651,35 +653,115 @@ QMenu::separator { height: 1px; background: @border; margin: 6px 8px; }
 
 QDialog { background: @bg-app; }
 
-/* 新建 / 编辑连接：无边框对话框，描边自己补（和主窗口 #Root 一个道理） */
+/* 新建 / 编辑连接：无边框对话框，描边自己补（和主窗口 #Root 一个道理）。
+   结构是**左栏深色信息条 + 右栏表单**：左栏复用侧栏那套 nav-* token，
+   在浅色主题下自然形成参考图里那种「深色侧条 + 浅色表单」的对比。 */
+/* 底色 / 背景图 / 描边由 DialogBackground::paintEvent 画，这里保持透明，
+   免得 QSS 再铺一层实色把图盖掉（和主窗口 #Root 同理）。 */
+/* 底色 / 背景图 / 描边由 DialogBackground::paintEvent 画，这里保持透明，
+   免得 QSS 再铺一层实色把图盖掉（和主窗口 #Root 同理）。 */
 #DialogRoot {
-    background: @bg-app;
-    border: 1px solid @border-strong;
-}
-#DialogHeader {
-    background: @bg-app;
+    background: transparent;
     border: none;
-    border-bottom: 1px solid @border;
+}
+/* 左栏直接复用主窗口侧栏的轨道色；右栏用弹窗自己的 @dialog-pane
+   （比卡片再淡/再亮一档，和左栏拉开好看的色差）。
+   **不要在这里另写固定色值** —— 换配色时弹窗要跟着主窗口一起变。 */
+#DialogRail {
+    background: @nav-bg;
+    border: none;
+    border-right: 1px solid @nav-line;
+}
+/* 有背景图时左栏比右栏更透，让图「占」到信息栏底下（和主窗口侧栏一致） */
+#DialogRail[glass="true"] {
+    background: @dialog-rail-glass;
+}
+#DialogPane {
+    background: @dialog-pane;
+}
+/* 弹窗后面的遮罩。盖在主窗口上，由 ConnectionDialog 在 showEvent 里建。 */
+#DialogMask {
+    background: @dialog-mask;
+}
+QLabel[role="railTitle"] {
+    font-size: 18px;
+    font-weight: 600;
+    color: @nav-text-hover;
+}
+QLabel[role="railText"] {
+    font-size: 13px;
+    color: @nav-text;
+}
+QLabel[role="railBullet"] {
+    font-size: 12px;
+    color: @nav-text;
+}
+QLabel[role="railNote"] {
+    font-size: 11px;
+    color: @nav-group;
+}
+/* 说明要点前那颗空心圆（参考页的 fa-circle-o） */
+#RailBulletDot {
+    background: transparent;
+    border: 1px solid @accent;
+    border-radius: 3px;
+}
+#RailNoteLine {
+    background: @nav-line;
+    border: none;
+}
+/* 右栏顶部「连接配置」 */
+QLabel[role="paneTitle"] {
+    font-size: 16px;
+    font-weight: 500;
+    color: @text;
+}
+/* 连接对话框里的字段标签：竖排、比普通表单的 12px 大一档 */
+QLabel[role="formLabel"] {
+    font-size: 13px;
+    font-weight: 500;
+    color: @text-dim;
+}
+/* 私钥选择区：虚线框 + 钥匙图标，视觉上对应参考页的上传区 */
+#KeyPicker {
+    background: @bg-input;
+    border: 1px dashed @border-strong;
+    border-radius: 10px;
+}
+#KeyPicker:hover {
+    border-color: @accent;
+}
+#KeyPicker QComboBox {
+    background: transparent;
+    border: none;
+    padding-left: 2px;
+}
+#KeyPicker QComboBox:focus,
+#KeyPicker QComboBox:hover {
+    border: none;
+}
+/* 密码框右侧的显隐按钮要留出位置 */
+QLineEdit#PasswordEdit {
+    padding-right: 34px;
+}
+/* 「更多信息」那条分隔线 */
+#FormDivider {
+    background: @border;
+    border: none;
 }
 #FormFooter {
     background: @bg-app;
     border: none;
     border-top: 1px solid @border;
 }
-QLabel[role="dialogTitle"] {
-    font-size: 18px;
-    font-weight: 600;
-    color: @text;
-}
-/* 表单里的分组标题：「连接信息」「认证」「其他信息」。
-   字比字段标签小、颜色更淡，靠上下留白分组，不画线 —— 12 个字段已经够挤了。
+/* 表单里的分组标题（「更多信息」）。
    **不要在这里加 padding-top**：QSS 的 padding 要等控件 polish 之后才进
    sizeHint，而 formContentHeight() 是在弹窗构造时量的，量完窗口会矮一截，
-   最后一行得滚才看得见。分组间距由代码里的 spacer 行给，布局会算进高度。 */
+   最后一行得滚才看得见。分组间距由布局 spacing 给。 */
 QLabel[role="formSection"] {
     font-size: 12px;
     font-weight: 600;
-    color: @text-mute;
+    color: @text-dim;
 }
 
 /* 检查更新对话框。标题 / 说明用 role 区分层级，正文仍然是 @text-dim ——

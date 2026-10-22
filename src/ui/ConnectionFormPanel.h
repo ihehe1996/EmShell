@@ -2,6 +2,7 @@
 
 #include "model/Connection.h"
 
+#include <QMargins>
 #include <QWidget>
 
 class QCheckBox;
@@ -10,6 +11,7 @@ class QLabel;
 class QLineEdit;
 class QScrollArea;
 class QSpinBox;
+class QStackedWidget;
 class QTextEdit;
 
 namespace Em {
@@ -42,11 +44,28 @@ public:
 
     // 主按钮上的字。控制台那边要的是「保存并连接」。
     void setSubmitText(const QString &text);
+    QString submitText() const;
+
+    // 走一遍校验并提交，效果等同于用户点面板自己的主按钮：校验通过就发
+    // saved()，失败（比如主机地址为空）只弹提示、不发信号。
+    // 弹窗的「创建 / 保存」按钮用它，省得再复制一份校验逻辑。
+    void submit();
 
     // 装进弹窗（ConnectionDialog）时关掉：标题由窗口标题栏给，
     // 面板自己那行「新建连接 + 收起按钮」就重了，还多一个没用的 X。
     // 只藏头部和它下面那道渐变，字段、校验、按钮一概不动。
     void setHeaderVisible(bool visible);
+
+    // 同理，弹窗底部用的是自己的「取消 / 创建」：面板那排按钮和它上面那道
+    // 渐变一起藏掉。
+    void setFooterVisible(bool visible);
+
+    // 表单内容的左右留白。弹窗里交给外层布局统一控制，标题、字段、按钮
+    // 才会落在同一条竖线上；不调的话这里自带 22px，弹窗里会多缩一截。
+    void setContentMargins(const QMargins &margins);
+
+    // 表单里最后一个可编辑字段（备注）。弹窗拿它把 Tab 顺序接到「取消 / 创建」上。
+    QWidget *lastField() const;
 
     // 整张表单原样铺开需要多高（也就是「中间那块一点不滚」时的高度）。
     // 弹窗靠它把窗口开到刚好装得下：QScrollArea 的 sizeHint 被 Qt 削过一截，
@@ -79,6 +98,8 @@ private:
     PillButton *m_submit = nullptr;
     QWidget *m_header = nullptr;        // 标题行，装弹窗时要藏
     QWidget *m_headerShadow = nullptr;  // 标题下面那道渐变，跟着一起藏
+    QWidget *m_footer = nullptr;        // 底部按钮行，装弹窗时要藏
+    QWidget *m_footerShadow = nullptr;  // 按钮上面那道渐变，跟着一起藏
     QWidget *m_formBody = nullptr;      // 滚动区里真正装着表单的那块
     QScrollArea *m_formScroll = nullptr; // 中间那个滚动区
 
@@ -91,9 +112,13 @@ private:
     QLineEdit *m_password = nullptr;
     QComboBox *m_key = nullptr;
     QCheckBox *m_savePassword = nullptr;
-    QCheckBox *m_favorite = nullptr;
     QLineEdit *m_tags = nullptr;
     QTextEdit *m_note = nullptr;
+
+    // 「密码 / 密钥」共用一行：标签在认证方式切换时要改字，字段用栈切换
+    QLabel *m_secretLabel = nullptr;
+    QStackedWidget *m_secretStack = nullptr;
+    QLabel *m_keyHint = nullptr;
 };
 
 } // namespace Em

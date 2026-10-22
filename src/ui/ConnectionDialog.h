@@ -5,18 +5,25 @@
 #include <QDialog>
 
 class QLabel;
+class QMouseEvent;
+class QShowEvent;
 
 namespace Em {
 
 class ConnectionFormPanel;
 class ConnectionStore;
 class KeyStore;
+class PillButton;
 
 // 新建 / 编辑连接的公共弹窗。
 //
 // 全程序只此一处弹连接表单：控制台、所有连接页、终端页空状态都走它。
 // 里面装的就是 ConnectionFormPanel（字段、校验、加解密全在那儿），这里只负责
 // 套一层对话框，把「取消 / 关掉窗口」接成 reject。
+//
+// 外观是一张两栏卡片：左边深色说明栏（图标 / 标题 / 说明 / 要点 / 底部提示），
+// 右边卡片表单（「连接配置」标题、竖排字段、底部取消 / 创建）。
+// 弹窗后面会盖一层半透明遮罩，主窗口整体压暗，和参考页的 modal 一致。
 //
 // 这里**不落库**：用户提交了就把还没落库的 Connection 写进 *out，存不存、
 // 存完要不要连过去，由调用方决定 —— 和 ConnectionFormPanel 的分工一样。
@@ -45,22 +52,27 @@ public:
                      QWidget *parent, Connection *out);
 
 protected:
-    // 无边框对话框：在头部和空白处按住左键可以拖动窗口。
-    // 字段（QLineEdit 等）会自己吃掉鼠标事件，所以在输入框上拖不会挪窗口。
+    // 无边框对话框：在左栏 / 卡片空白处按住左键可以拖动窗口。
     void mousePressEvent(QMouseEvent *event) override;
     void showEvent(QShowEvent *event) override;
+    // 关闭时顺手把主窗口上的遮罩收掉
+    void done(int result) override;
 
 private:
     ConnectionDialog(ConnectionStore *store, KeyStore *keys, QWidget *parent);
 
-    // 头部那两行字。原生标题栏没有了（见构造函数），标题得自己画。
-    void setHeader(const QString &title, const QString &subtitle);
+    void setHeader(const QString &title, const QString &text);
 
     ConnectionFormPanel *m_form = nullptr;
-    QLabel *m_title = nullptr;
-    QLabel *m_subtitle = nullptr;
+    PillButton *m_submit = nullptr;
+    QLabel *m_railIcon = nullptr;
+    QLabel *m_railTitle = nullptr;
+    QLabel *m_railText = nullptr;
+
+    QWidget *m_overlay = nullptr;
     Connection m_result;
     bool m_dwmApplied = false;
+    bool m_fadeStarted = false;
 };
 
 } // namespace Em

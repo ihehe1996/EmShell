@@ -3,6 +3,7 @@
 #include "model/Connection.h"
 #include "ui/IconProvider.h"
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QFrame>
 #include <QHash>
@@ -169,14 +170,8 @@ private:
 
 // 下拉选择框。
 //
-// 比原生 QComboBox 只多做一件事：**自己画右边的箭头**。
-//
-// QSS 的 ::down-arrow 只认图片（image: url(...)），而图片是死的，没法跟着主题
-// 变色，深色下就会是一块突兀的浅灰。图标库里本来就有 ChevronDown，而且能按
-// 颜色现取，所以干脆在 paintEvent 里画。
-// 没有箭头的话下拉框和输入框长得一模一样 —— 用户根本看不出这里能点。
-//
-// 列表弹出层的样式还是走 QSS（见 app.qss 的 QComboBox 段）。
+// 自己画右边那颗箭头，弹出列表也按主题配色。整套控件要跟 App 的圆角、行高、
+// 强调色对齐，Windows 原生那套放在深色界面里太跳。
 class SelectBox : public QComboBox
 {
     Q_OBJECT
@@ -184,7 +179,7 @@ public:
     explicit SelectBox(QWidget *parent = nullptr);
 
 public slots:
-    // 弹出前先把列表行距压回 0，否则每一项会重叠。理由写在 .cpp 里。
+    // 弹出前把列表行距压回 0，否则每项会重叠。理由写在 .cpp 里。
     void showPopup() override;
 
 protected:
@@ -194,6 +189,18 @@ protected:
 
 private:
     bool m_hover = false;
+};
+
+// QSS 只负责画方框和底色，**不会画对勾**（选中时就是一个实心色块）。
+// 这里在它画完之后补一颗白色的 Check 图标，深色 / 浅色主题都看得清。
+class CheckBox : public QCheckBox
+{
+    Q_OBJECT
+public:
+    explicit CheckBox(const QString &text, QWidget *parent = nullptr);
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
 };
 
 // 侧边栏的导航项。
@@ -336,9 +343,13 @@ signals:
 
 protected:
     void mouseDoubleClickEvent(QMouseEvent *event) override;
+    // 右键整行也弹出「打开终端 / 编辑 / 复制主机地址 / 删除」，
+    // 位置跟着鼠标走；三点按钮复用同一份菜单。
+    void contextMenuEvent(QContextMenuEvent *event) override;
 
 private:
     void refresh();
+    void showMenu(const QPoint &globalPos);
 
     Connection m_connection;
     QString m_groupName;

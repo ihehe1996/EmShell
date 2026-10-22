@@ -153,6 +153,15 @@ const QHash<QString, QString> &lightTable()
         { QStringLiteral("ok-soft"),  QStringLiteral("rgba(15, 157, 88, 0.12)") },
         { QStringLiteral("err-soft"), QStringLiteral("rgba(217, 45, 32, 0.10)") },
 
+        // 新建连接弹窗的外层遮罩。左栏直接用主窗口的 nav-bg。
+        { QStringLiteral("dialog-mask"), QStringLiteral("rgba(0, 0, 0, 0.45)") },
+        // 弹窗右栏。比主窗口卡片（纯白）再冷一档的柔白：左边是深色轨道，
+        // 右边纯白会亮得发刺，压一点点蓝反而更耐看，也还能看出这是张浮起来的卡。
+        { QStringLiteral("dialog-pane"), QStringLiteral("rgba(248, 251, 255, 0.92)") },
+        // 弹窗左栏的玻璃层。比主窗口侧栏的 nav-bg-glass 更实一点：
+        // 弹窗跨在亮背景图上，太透会让浅色文字看不清。
+        { QStringLiteral("dialog-rail-glass"), QStringLiteral("rgba(22, 26, 35, 0.86)") },
+
         // --- 页头：普通就好 ---
         { QStringLiteral("brand-bg"),        QStringLiteral("#FFFFFF") },
         { QStringLiteral("brand-line"),      QStringLiteral("#EAEAEE") },
@@ -249,6 +258,13 @@ const QHash<QString, QString> &darkTable()
         { QStringLiteral("err"),      QStringLiteral("#F0553D") },
         { QStringLiteral("ok-soft"),  QStringLiteral("rgba(63, 185, 80, 0.14)") },
         { QStringLiteral("err-soft"), QStringLiteral("rgba(240, 85, 61, 0.16)") },
+
+        // 新建连接弹窗的外层遮罩
+        { QStringLiteral("dialog-mask"), QStringLiteral("rgba(0, 0, 0, 0.55)") },
+        // 弹窗右栏比左栏的 nav-bg（#1D212B）亮一档、再偏冷一点。
+        // 两栏亮度差得太少时中间那条边界会糊掉，看着像一整块深灰。
+        { QStringLiteral("dialog-pane"), QStringLiteral("rgba(42, 49, 64, 0.90)") },
+        { QStringLiteral("dialog-rail-glass"), QStringLiteral("rgba(29, 33, 43, 0.86)") },
 
         // 页头：深色下的对应版本
         { QStringLiteral("brand-bg"),        QStringLiteral("#1E1C24") },
