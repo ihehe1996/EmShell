@@ -6,10 +6,13 @@
 #include "ui/SettingsPage.h"
 #include "ui/Widgets.h"
 
+#include <QDesktopServices>
+#include <QEnterEvent>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
+#include <QUrl>
 #include <QEasingCurve>
 #include <QPainter>
 #include <QPixmap>
@@ -37,6 +40,60 @@ constexpr DWORD kDwmCornerRound = 2;   // DWMWCP_ROUND
 // 左栏标题前那颗图标的边长。跟 18px 的标题放一行，比标题再大一点点就够，
 // 用原来 32px 那版会高出一截，把标题压成一个小字。
 constexpr int kRailIconSize = 24;
+
+// 左栏底部的推荐链接。
+//
+// QSS 没有 text-decoration，QLabel 自己也不认 hover —— 想「平时无下划线、
+// 悬浮时出现下划线」只能自己在进出事件里改字体，和侧栏底部的 SideBarLink
+// 是同一个路子。链接色走 app.qss 的 role="railAd"，会跟着配色变。
+class RailAdLink : public QLabel
+{
+public:
+    explicit RailAdLink(const QString &text, const QUrl &url, QWidget *parent = nullptr)
+        : QLabel(text, parent)
+        , m_url(url)
+    {
+        setProperty("role", QStringLiteral("railAd"));
+        setCursor(Qt::PointingHandCursor);
+        setAlignment(Qt::AlignCenter);
+        // 字号在这里也定一遍：QSS 要等 polish 之后才生效，而布局在构造时
+        // 就按 width() 量过一次，14px 的默认字体放不下会被换成两行。
+        setFont(Theme::uiFont(11));
+        setWordWrap(false);
+    }
+
+protected:
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton && rect().contains(event->position().toPoint()))
+            QDesktopServices::openUrl(m_url);
+        QLabel::mouseReleaseEvent(event);
+    }
+
+    void enterEvent(QEnterEvent *event) override
+    {
+        setHovered(true);
+        QLabel::enterEvent(event);
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        setHovered(false);
+        QLabel::leaveEvent(event);
+    }
+
+private:
+    void setHovered(bool hovered)
+    {
+        QFont f = font();
+        f.setUnderline(hovered);
+        setFont(f);
+        setProperty("hover", hovered);
+        repolish(this);
+    }
+
+    QUrl m_url;
+};
 
 // 弹窗自己的背景宿主：和主窗口同一个思路，读同一份背景图设置，铺满整窗
 // 再压一层同浓度蒙层。左栏用 nav-bg-glass、右栏用带 alpha 的 bg-panel，
@@ -195,18 +252,23 @@ ConnectionDialog::ConnectionDialog(ConnectionStore *store, KeyStore *keys, QWidg
     railLayout->addWidget(noteLine);
     railLayout->addSpacing(12);
 
+    // 左栏底部不放存储方式的提示，改成推荐位：图标 + 文字作为一整组居中，
+    // 悬浮时文字出现下划线。
     auto *noteRow = new QWidget(rail);
     auto *noteLayout = new QHBoxLayout(noteRow);
     noteLayout->setContentsMargins(0, 0, 0, 0);
-    noteLayout->setSpacing(8);
-    auto *lockIcon = new QLabel(noteRow);
-    lockIcon->setPixmap(Icons::pixmap(Icon::Lock,
-                                      Theme::color(QStringLiteral("nav-group")), 13));
-    auto *note = makeLabel(QStringLiteral("密码明文保存在本机配置文件"),
-                           "railNote", noteRow);
-    note->setWordWrap(true);
-    noteLayout->addWidget(lockIcon, 0, Qt::AlignTop);
-    noteLayout->addWidget(note, 1);
+    noteLayout->setSpacing(0);
+    auto *globeIcon = new QLabel(noteRow);
+    globeIcon->setPixmap(Icons::pixmap(Icon::Globe,
+                                       Theme::color(QStringLiteral("nav-text")), 13));
+    auto *adLink = new RailAdLink(QStringLiteral("服务器 + 域名 一站式提供"),
+                                  QUrl(QStringLiteral("https://idc.empass6.com/")),
+                                  noteRow);
+    noteLayout->addStretch();
+    noteLayout->addWidget(globeIcon, 0, Qt::AlignVCenter);
+    noteLayout->addSpacing(6);
+    noteLayout->addWidget(adLink);
+    noteLayout->addStretch();
     railLayout->addWidget(noteRow);
 
     // ---- 右栏：卡片表单 ----

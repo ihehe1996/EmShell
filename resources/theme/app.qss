@@ -708,6 +708,15 @@ QLabel[role="railNote"] {
     font-size: 11px;
     color: @nav-group;
 }
+/* 左栏底部的推荐链接。下划线由 RailAdLink 在悬停时改字体加上，
+   QSS 没有 text-decoration。 */
+QLabel[role="railAd"] {
+    font-size: 11px;
+    color: @nav-text;
+}
+QLabel[role="railAd"][hover="true"] {
+    color: @nav-text-hover;
+}
 /* 说明要点前那颗空心圆（参考页的 fa-circle-o） */
 #RailBulletDot {
     background: transparent;
