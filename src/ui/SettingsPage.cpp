@@ -1,7 +1,9 @@
 #include "ui/SettingsPage.h"
 
 #include "app/Theme.h"
+#include "model/ConfigTransfer.h"
 #include "model/ConnectionStore.h"
+#include "model/KeyStore.h"
 #include "terminal/LocalSession.h"
 #include "ui/IconProvider.h"
 #include "ui/Widgets.h"
@@ -9,6 +11,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
@@ -201,9 +204,10 @@ int SettingsPage::backgroundDim()
 // 页面
 // ---------------------------------------------------------------------------
 
-SettingsPage::SettingsPage(ConnectionStore *store, QWidget *parent)
+SettingsPage::SettingsPage(ConnectionStore *store, KeyStore *keys, QWidget *parent)
     : QWidget(parent)
     , m_store(store)
+    , m_keys(keys)
 {
     auto *title = makeLabel(QStringLiteral("配置管理"), "pageTitle", this);
     auto *subtitle = makeLabel(QStringLiteral("外观、终端和数据的相关设置"), "pageSubtitle", this);
@@ -471,6 +475,91 @@ SettingsPage::SettingsPage(ConnectionStore *store, QWidget *parent)
     aboutLayout->addWidget(aboutTitle);
     aboutLayout->addWidget(aboutText);
 
+    // ---- 导入导出：导出 ----
+    auto *exportCard = new Card(this);
+    auto *exportTitle = makeLabel(QStringLiteral("导出配置"), "sectionTitle", exportCard);
+    auto *exportHint = makeLabel(
+        QStringLiteral("把连接、分组、历史记录和密钥索引打包成一个 JSON 文件。"
+                       "密码和私钥口令会以明文写进去，请妥善保管导出文件。"
+                       "私钥文件本身不包含在内 —— 迁移到别的电脑时，需要另外拷贝私钥。"),
+        "hint", exportCard);
+    exportHint->setWordWrap(true);
+
+    auto *exportButton = new PillButton(QStringLiteral("导出到文件…"), PillButton::Primary,
+                                        exportCard);
+    exportButton->setLeadingIcon(Icon::Download, 15);
+    connect(exportButton, &QPushButton::clicked, this, &SettingsPage::exportConfig);
+
+    auto *exportButtonRow = new QHBoxLayout;
+    exportButtonRow->setContentsMargins(0, 0, 0, 0);
+    exportButtonRow->addWidget(exportButton);
+    exportButtonRow->addStretch();
+
+    auto *exportLayout = new QVBoxLayout(exportCard);
+    exportLayout->setContentsMargins(20, 18, 20, 18);
+    exportLayout->setSpacing(12);
+    exportLayout->addWidget(exportTitle);
+    exportLayout->addWidget(exportHint);
+    exportLayout->addLayout(exportButtonRow);
+
+    // ---- 导入导出：导入 ----
+    auto *importCard = new Card(this);
+    auto *importTitle = makeLabel(QStringLiteral("导入配置"), "sectionTitle", importCard);
+
+    m_transferSummary = makeLabel(QString(), "hint", importCard);
+
+    auto *importHint = makeLabel(
+        QStringLiteral("合并：保留现有数据，同 ID 的连接 / 密钥用文件里的版本覆盖。\n"
+                       "替换：先清空现有的连接、分组、历史和密钥索引，再导入文件内容。\n"
+                       "导入后，密钥指向的私钥文件必须在本机对应路径上，否则需要重新添加。"),
+        "hint", importCard);
+    importHint->setWordWrap(true);
+
+    auto *mergeButton = new PillButton(QStringLiteral("导入并合并…"), PillButton::Ghost,
+                                       importCard);
+    mergeButton->setLeadingIcon(Icon::Upload, 15);
+    connect(mergeButton, &QPushButton::clicked, this, [this] { importConfig(false); });
+
+    auto *replaceButton = new PillButton(QStringLiteral("导入并替换…"), PillButton::Danger,
+                                         importCard);
+    replaceButton->setLeadingIcon(Icon::Upload, 15);
+    connect(replaceButton, &QPushButton::clicked, this, [this] { importConfig(true); });
+
+    auto *importButtonRow = new QHBoxLayout;
+    importButtonRow->setContentsMargins(0, 0, 0, 0);
+    importButtonRow->setSpacing(9);
+    importButtonRow->addWidget(mergeButton);
+    importButtonRow->addWidget(replaceButton);
+    importButtonRow->addStretch();
+
+    auto *importLayout = new QVBoxLayout(importCard);
+    importLayout->setContentsMargins(20, 18, 20, 18);
+    importLayout->setSpacing(12);
+    importLayout->addWidget(importTitle);
+    importLayout->addWidget(m_transferSummary);
+    importLayout->addWidget(importHint);
+    importLayout->addLayout(importButtonRow);
+
+    const auto updateTransferSummary = [this] {
+        if (!m_transferSummary)
+            return;
+        const int conns = m_store ? m_store->connections().size() : 0;
+        const int groups = m_store ? m_store->groups().size() : 0;
+        const int history = m_store ? m_store->history().size() : 0;
+        const int keys = m_keys ? m_keys->keys().size() : 0;
+        m_transferSummary->setText(
+            QStringLiteral("当前：%1 条连接 · %2 个分组 · %3 条历史 · %4 个密钥")
+                .arg(conns).arg(groups).arg(history).arg(keys));
+    };
+    if (m_store) {
+        connect(m_store, &ConnectionStore::connectionsChanged, this, updateTransferSummary);
+        connect(m_store, &ConnectionStore::groupsChanged, this, updateTransferSummary);
+        connect(m_store, &ConnectionStore::historyChanged, this, updateTransferSummary);
+    }
+    if (m_keys)
+        connect(m_keys, &KeyStore::keysChanged, this, updateTransferSummary);
+    updateTransferSummary();
+
     // ---- 选项卡 ----
     // 不用 QTabWidget：它的页签尺寸、内边距和选中态在深色主题下很难和侧栏对齐。
     // 两个可勾选按钮 + QStackedWidget，样式完全由 app.qss 控制。
@@ -490,12 +579,14 @@ SettingsPage::SettingsPage(ConnectionStore *store, QWidget *parent)
 
     m_basicTab = makeTab(QStringLiteral("基本设置"), QStringLiteral("BasicTab"));
     m_appearanceTab = makeTab(QStringLiteral("外观设置"), QStringLiteral("AppearanceTab"));
+    m_transferTab = makeTab(QStringLiteral("导入导出"), QStringLiteral("TransferTab"));
 
     auto *tabBarLayout = new QHBoxLayout(tabBar);
     tabBarLayout->setContentsMargins(3, 3, 3, 3);
     tabBarLayout->setSpacing(3);
     tabBarLayout->addWidget(m_basicTab);
     tabBarLayout->addWidget(m_appearanceTab);
+    tabBarLayout->addWidget(m_transferTab);
 
     auto *tabRow = new QHBoxLayout;
     tabRow->setContentsMargins(0, 0, 0, 0);
@@ -519,9 +610,18 @@ SettingsPage::SettingsPage(ConnectionStore *store, QWidget *parent)
     appearancePageLayout->addWidget(backgroundCard);
     appearancePageLayout->addStretch();
 
+    auto *transferPage = new QWidget;
+    auto *transferPageLayout = new QVBoxLayout(transferPage);
+    transferPageLayout->setContentsMargins(0, 0, 0, 0);
+    transferPageLayout->setSpacing(16);
+    transferPageLayout->addWidget(exportCard);
+    transferPageLayout->addWidget(importCard);
+    transferPageLayout->addStretch();
+
     m_tabStack = new QStackedWidget(this);
     m_tabStack->addWidget(basicPage);
     m_tabStack->addWidget(appearancePage);
+    m_tabStack->addWidget(transferPage);
     // 高度跟当前页走。QStackedWidget 默认取所有页里最高的那个，
     // 切到较矮的外观页时下面会空一大块。
     m_tabStack->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
@@ -529,6 +629,7 @@ SettingsPage::SettingsPage(ConnectionStore *store, QWidget *parent)
     const auto selectTab = [this](int index) {
         m_basicTab->setChecked(index == 0);
         m_appearanceTab->setChecked(index == 1);
+        m_transferTab->setChecked(index == 2);
         m_tabStack->setCurrentIndex(index);
 
         // 高度改成当前页的。延迟到事件循环：构造的时候样式还没 polish，
@@ -546,6 +647,7 @@ SettingsPage::SettingsPage(ConnectionStore *store, QWidget *parent)
 
     connect(m_basicTab, &QPushButton::clicked, this, [selectTab] { selectTab(0); });
     connect(m_appearanceTab, &QPushButton::clicked, this, [selectTab] { selectTab(1); });
+    connect(m_transferTab, &QPushButton::clicked, this, [selectTab] { selectTab(2); });
     selectTab(0);
 
     // ---- 组装 ----
@@ -577,6 +679,127 @@ void SettingsPage::openDataFolder()
     const QString dir = dataDirectory();
     if (!QDesktopServices::openUrl(QUrl::fromLocalFile(dir)))
         emit statusMessage(QStringLiteral("打不开目录：%1").arg(dir));
+}
+
+void SettingsPage::exportConfig()
+{
+    if (!m_store || !m_keys) {
+        QMessageBox::warning(this, QStringLiteral("导出失败"),
+                             QStringLiteral("数据还没加载好，稍后再试。"));
+        return;
+    }
+
+    QString dir = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+    if (dir.isEmpty())
+        dir = QDir::homePath();
+    const QString defaultName = QStringLiteral("EmShell-config-%1.json")
+                                    .arg(QDateTime::currentDateTime().toString(
+                                        QStringLiteral("yyyyMMdd-HHmm")));
+
+    QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("导出配置"), QDir(dir).filePath(defaultName),
+        QStringLiteral("EmShell 配置 (*.json);;所有文件 (*)"));
+    if (path.isEmpty())
+        return;
+    // 用户手打文件名时补上后缀，不然下次导入的文件对话框里看不见
+    if (QFileInfo(path).suffix().isEmpty())
+        path += QStringLiteral(".json");
+
+    QString error;
+    if (!ConfigTransfer::writeExportFile(path, *m_store, *m_keys, &error)) {
+        QMessageBox::warning(this, QStringLiteral("导出失败"), error);
+        return;
+    }
+
+    QMessageBox::information(
+        this, QStringLiteral("导出完成"),
+        QStringLiteral("已导出 %1 条连接、%2 个分组、%3 条历史和 %4 个密钥。\n\n"
+                       "密码和私钥口令是明文，请妥善保管这个文件。\n"
+                       "私钥文件本身不在导出文件里，换电脑时需要另行拷贝。\n\n%5")
+            .arg(m_store->connections().size())
+            .arg(m_store->groups().size())
+            .arg(m_store->history().size())
+            .arg(m_keys->keys().size())
+            .arg(QDir::toNativeSeparators(path)));
+    emit statusMessage(QStringLiteral("配置已导出到 %1").arg(QDir::toNativeSeparators(path)));
+}
+
+void SettingsPage::importConfig(bool replace)
+{
+    if (!m_store || !m_keys) {
+        QMessageBox::warning(this, QStringLiteral("导入失败"),
+                             QStringLiteral("数据还没加载好，稍后再试。"));
+        return;
+    }
+
+    QString dir = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+    if (dir.isEmpty())
+        dir = QDir::homePath();
+    const QString path = QFileDialog::getOpenFileName(
+        this, QStringLiteral("导入配置"), dir,
+        QStringLiteral("EmShell 配置 (*.json);;所有文件 (*)"));
+    if (path.isEmpty())
+        return;
+
+    ConfigTransfer::ImportData data;
+    QString error;
+    if (!ConfigTransfer::readImportFile(path, &data, &error)) {
+        QMessageBox::warning(this, QStringLiteral("导入失败"), error);
+        return;
+    }
+
+    const ConfigTransfer::Counts counts = ConfigTransfer::countsOf(data);
+    const QString keyNote = counts.keys > 0
+        ? QStringLiteral("\n\n注意：私钥文件本身不在导入文件里，请确认对应路径上的文件仍然存在。")
+        : QString();
+
+    if (replace) {
+        const auto answer = QMessageBox::warning(
+            this, QStringLiteral("导入并替换"),
+            QStringLiteral("这会先清空当前的 %1 条连接、%2 个分组、%3 条历史和 %4 个密钥，"
+                           "再导入文件里的内容。\n\n"
+                           "文件里包含 %5 条连接、%6 个分组、%7 条历史和 %8 个密钥。%9\n\n"
+                           "此操作不能撤销，确定继续吗？")
+                .arg(m_store->connections().size())
+                .arg(m_store->groups().size())
+                .arg(m_store->history().size())
+                .arg(m_keys->keys().size())
+                .arg(counts.connections)
+                .arg(counts.groups)
+                .arg(counts.history)
+                .arg(counts.keys)
+                .arg(keyNote),
+            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+        if (answer != QMessageBox::Yes)
+            return;
+    } else {
+        const auto answer = QMessageBox::question(
+            this, QStringLiteral("导入并合并"),
+            QStringLiteral("文件里包含 %1 条连接、%2 个分组、%3 条历史和 %4 个密钥。%5\n\n"
+                           "同 ID 的现有项会被文件里的版本覆盖，其余保留。继续吗？")
+                .arg(counts.connections)
+                .arg(counts.groups)
+                .arg(counts.history)
+                .arg(counts.keys)
+                .arg(keyNote),
+            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Yes);
+        if (answer != QMessageBox::Yes)
+            return;
+    }
+
+    // 先连接后密钥：连接里引用的 keyId 在同一个文件里，一起换掉才一致
+    m_store->importSnapshot(data.connections, data.groups, data.history, replace);
+    m_keys->importSnapshot(data.keys, replace);
+
+    QMessageBox::information(
+        this, QStringLiteral("导入完成"),
+        QStringLiteral("已导入 %1 条连接、%2 个分组、%3 条历史和 %4 个密钥。%5")
+            .arg(counts.connections)
+            .arg(counts.groups)
+            .arg(counts.history)
+            .arg(counts.keys)
+            .arg(keyNote));
+    emit statusMessage(QStringLiteral("配置已从 %1 导入").arg(QDir::toNativeSeparators(path)));
 }
 
 void SettingsPage::chooseBackground()

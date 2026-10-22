@@ -82,6 +82,12 @@ KeyStore::KeyStore(QObject *parent)
                  + QStringLiteral("/keys.json");
 }
 
+KeyStore::KeyStore(const QString &filePath, QObject *parent)
+    : QObject(parent)
+    , m_filePath(filePath)
+{
+}
+
 QString KeyStore::keysDirectory()
 {
     QString base = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
@@ -337,6 +343,29 @@ void KeyStore::update(const SshKey &key)
             return;
         }
     }
+}
+
+void KeyStore::importSnapshot(const QVector<SshKey> &keys, bool replace)
+{
+    if (replace) {
+        m_keys = keys;
+    } else {
+        for (const SshKey &incoming : keys) {
+            bool found = false;
+            for (SshKey &existing : m_keys) {
+                if (existing.id == incoming.id) {
+                    existing = incoming;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                m_keys << incoming;
+        }
+    }
+
+    save();
+    emit keysChanged();
 }
 
 } // namespace Em

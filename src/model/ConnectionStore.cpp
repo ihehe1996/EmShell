@@ -21,6 +21,12 @@ ConnectionStore::ConnectionStore(QObject *parent)
     m_filePath = dataDirectory() + QStringLiteral("/connections.json");
 }
 
+ConnectionStore::ConnectionStore(const QString &filePath, QObject *parent)
+    : QObject(parent)
+    , m_filePath(filePath)
+{
+}
+
 QString ConnectionStore::dataDirectory()
 {
     QString base = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
@@ -101,6 +107,85 @@ void ConnectionStore::load()
     if (migrateSecrets && !migrationFailed)
         save();
 
+    emit connectionsChanged();
+    emit groupsChanged();
+    emit historyChanged();
+}
+
+void ConnectionStore::importSnapshot(const QVector<Connection> &connections,
+                                     const QVector<ConnectionGroup> &groups,
+                                     const QVector<HistoryEntry> &history,
+                                     bool replace)
+{
+    if (replace) {
+        m_connections = connections;
+        m_groups = groups;
+        m_history = history;
+    } else {
+        // 分组：同 id 的更新名字 / 颜色，缺的追加。
+        // order 先不定，最后统一重排，免得导入的 order 和现有的撞在一起。
+        for (const ConnectionGroup &incoming : groups) {
+            bool found = false;
+            for (ConnectionGroup &existing : m_groups) {
+                if (existing.id == incoming.id) {
+                    existing.name = incoming.name;
+                    existing.color = incoming.color;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                m_groups << incoming;
+        }
+
+        // 连接：同 id 整体覆盖，缺的追加
+        for (const Connection &incoming : connections) {
+            bool found = false;
+            for (Connection &existing : m_connections) {
+                if (existing.id == incoming.id) {
+                    existing = incoming;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                m_connections << incoming;
+        }
+
+        // 历史：每个连接只留最近一条，和 recordUse() 的语义一致
+        for (const HistoryEntry &incoming : history) {
+            bool found = false;
+            for (HistoryEntry &existing : m_history) {
+                if (existing.connectionId == incoming.connectionId) {
+                    if (incoming.at > existing.at)
+                        existing = incoming;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                m_history << incoming;
+        }
+    }
+
+    // 历史永远按时间从新到旧，只留最近 kMaxHistory 条
+    std::stable_sort(m_history.begin(), m_history.end(),
+                     [](const HistoryEntry &a, const HistoryEntry &b) {
+                         return a.at > b.at;
+                     });
+
+    // order 统一成 0..n-1，下拉框 / 侧栏都按它排序
+    std::stable_sort(m_groups.begin(), m_groups.end(),
+                     [](const ConnectionGroup &a, const ConnectionGroup &b) {
+                         return a.order < b.order;
+                     });
+    for (int i = 0; i < m_groups.size(); ++i)
+        m_groups[i].order = i;
+
+    if (m_history.size() > kMaxHistory)
+        m_history.resize(kMaxHistory);
+
+    save();
     emit connectionsChanged();
     emit groupsChanged();
     emit historyChanged();

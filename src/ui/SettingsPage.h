@@ -15,20 +15,22 @@ namespace Em {
 class BackgroundPreview;
 class ConnectionStore;
 class ElidedLabel;
+class KeyStore;
 class PillButton;
 
 // 「配置管理」：终端、数据和外观设置。
 // 用 QSettings 存，路径是注册表 HKCU\Software\Em\EmShell。
 //
-// 分成「基本设置 / 外观设置」两个选项卡：基本设置放终端、数据和关于；
-// 外观设置放配色和背景图。选项卡没做成 QTabWidget —— 那套的页签尺寸 / 内边距
-// 在深色主题下很难调得和侧栏一致，这里用两个可勾选的按钮 + QStackedWidget。
+// 分成「基本设置 / 外观设置 / 导入导出」三个选项卡：基本设置放终端、数据和关于；
+// 外观设置放配色和背景图；导入导出负责配置文件的进出。
+// 选项卡没做成 QTabWidget —— 那套的页签尺寸 / 内边距在深色主题下很难调得和
+// 侧栏一致，这里用可勾选的按钮 + QStackedWidget。
 class SettingsPage : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit SettingsPage(ConnectionStore *store, QWidget *parent = nullptr);
+    SettingsPage(ConnectionStore *store, KeyStore *keys, QWidget *parent = nullptr);
 
     // 这几项在别处也要用，做成静态的方便直接读
     static QString preferredShell();
@@ -53,7 +55,12 @@ private:
     void clearBackground();
     void updateBackgroundUi();
 
+    // 导入导出。replace=true 会先清空现有连接 / 分组 / 历史和密钥索引。
+    void exportConfig();
+    void importConfig(bool replace);
+
     ConnectionStore *m_store = nullptr;
+    KeyStore *m_keys = nullptr;
     QComboBox *m_paletteBox = nullptr;
     QComboBox *m_shellBox = nullptr;
     QSpinBox *m_fontSizeBox = nullptr;
@@ -61,6 +68,9 @@ private:
     QStackedWidget *m_tabStack = nullptr;
     QPushButton *m_basicTab = nullptr;
     QPushButton *m_appearanceTab = nullptr;
+    QPushButton *m_transferTab = nullptr;
+
+    QLabel *m_transferSummary = nullptr;
 
     BackgroundPreview *m_backgroundPreview = nullptr;
     ElidedLabel *m_backgroundFile = nullptr;

@@ -40,6 +40,8 @@ class KeyStore : public QObject
 
 public:
     explicit KeyStore(QObject *parent = nullptr);
+    // 指定索引文件路径。给自检用，避免碰用户真实的 keys.json。
+    KeyStore(const QString &filePath, QObject *parent = nullptr);
 
     void load();
     void save();
@@ -56,6 +58,10 @@ public:
 
     void remove(const QString &id);
     void update(const SshKey &key);
+
+    // 导入一份密钥索引。replace=true 时先清空；否则按 id 合并 / 覆盖。
+    // 私钥文件本身不在导入文件里，这里只登记路径。
+    void importSnapshot(const QVector<SshKey> &keys, bool replace);
 
     // 删除时是否连磁盘上的私钥文件一起删
     static QString keysDirectory();

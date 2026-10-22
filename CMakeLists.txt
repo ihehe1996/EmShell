@@ -54,6 +54,8 @@ qt_add_executable(EmShell WIN32
     src/model/Connection.cpp
     src/model/ConnectionStore.h
     src/model/ConnectionStore.cpp
+    src/model/ConfigTransfer.h
+    src/model/ConfigTransfer.cpp
     src/model/Secret.h
     src/model/Secret.cpp
     src/model/KeyStore.h

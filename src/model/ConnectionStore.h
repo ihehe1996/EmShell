@@ -17,6 +17,8 @@ class ConnectionStore : public QObject
 
 public:
     explicit ConnectionStore(QObject *parent = nullptr);
+    // 指定配置文件路径。给自检用，避免碰用户真实的 connections.json。
+    ConnectionStore(const QString &filePath, QObject *parent = nullptr);
 
     // 从磁盘读。文件不存在（首次运行）时连接 / 历史为空，只预置
     // 「生产环境 / 测试环境」两个分组 —— 不要往列表里塞示例连接。
@@ -55,6 +57,16 @@ public:
     // 每个连接只保留最近一次使用的一条，按时间从新到旧排列。
     const QVector<HistoryEntry> &history() const { return m_history; }
     void clearHistory();
+
+    // ---- 导入 ----
+    // 一次性导入一份配置快照（见 model/ConfigTransfer）。
+    // replace=true：先清空连接 / 分组 / 历史，再整体换成传入的；
+    // replace=false：按 id 合并，文件里的版本覆盖同 id 的现有项，缺的追加。
+    // 只落一次盘、发一轮信号。
+    void importSnapshot(const QVector<Connection> &connections,
+                        const QVector<ConnectionGroup> &groups,
+                        const QVector<HistoryEntry> &history,
+                        bool replace);
 
 signals:
     void connectionsChanged();

@@ -250,7 +250,7 @@ void MainWindow::buildUi()
     m_stack->addWidget(m_favorites   = new ConnectionsPage(m_store, m_keys));
     m_stack->addWidget(m_terminal    = new TerminalPage(m_store, m_keys));
     m_stack->addWidget(m_keysPage    = new KeysPage(m_keys));
-    m_stack->addWidget(m_settings    = new SettingsPage(m_store));
+    m_stack->addWidget(m_settings    = new SettingsPage(m_store, m_keys));
     m_stack->addWidget(m_updatePage  = new UpdatePage());
     m_favorites->configureAsFavorites();
 

@@ -2,6 +2,7 @@
 
 #include "app/AppConfig.h"
 #include "app/Theme.h"
+#include "model/ConfigTransfer.h"
 #include "model/ConnectionStore.h"
 #include "model/KeyStore.h"
 #include "ssh/SshSession.h"
@@ -35,6 +36,7 @@
 #include <QScrollBar>
 #include <QStackedWidget>
 #include <QTabWidget>
+#include <QTemporaryDir>
 #include <QTextStream>
 #include <QTimer>
 
@@ -1019,11 +1021,19 @@ int runSettingsShot()
         QTimer::singleShot(500, &window, [&window] {
             if (window.grab().save(QStringLiteral("settingsui_appearance.png")))
                 log(QStringLiteral("  已保存 settingsui_appearance.png"));
-            qApp->quit();
+
+            if (auto *tab = window.findChild<QPushButton *>(QStringLiteral("TransferTab")))
+                tab->click();
+
+            QTimer::singleShot(500, &window, [&window] {
+                if (window.grab().save(QStringLiteral("settingsui_transfer.png")))
+                    log(QStringLiteral("  已保存 settingsui_transfer.png"));
+                qApp->quit();
+            });
         });
     });
 
-    QTimer::singleShot(6000, [] { qApp->quit(); });
+    QTimer::singleShot(8000, [] { qApp->quit(); });
     qApp->exec();
 
     QFile::remove(background);
@@ -1086,6 +1096,162 @@ int runComboShot()
 
     QTimer::singleShot(6000, [] { qApp->quit(); });
     qApp->exec();
+
+    flushLog();
+    return g_fail == 0 ? 0 : 1;
+}
+
+// ---------------------------------------------------------------------------
+// 配置导入导出自检：导出到临时文件 → 读回 → 数量 / 明文密码往返 → 删掉。
+//   --transfertest
+//
+// 只做文件层面的往返，不调用 importSnapshot()（那会改写用户真正的配置文件）。
+// ---------------------------------------------------------------------------
+int runTransferTest()
+{
+    QFile::remove(QStringLiteral("selftest.log"));
+    log(QStringLiteral("== 配置导入导出自检 =="));
+
+    ConnectionStore store;
+    store.load();
+    KeyStore keys;
+    keys.load();
+
+    const QString exportPath =
+        QDir::temp().filePath(QStringLiteral("emshell-transfer-selftest.json"));
+
+    QString error;
+    check(ConfigTransfer::writeExportFile(exportPath, store, keys, &error),
+          QStringLiteral("写出导出文件"), error);
+    check(QFileInfo::exists(exportPath), QStringLiteral("导出文件已落盘"));
+
+    ConfigTransfer::ImportData data;
+    error.clear();
+    check(ConfigTransfer::readImportFile(exportPath, &data, &error),
+          QStringLiteral("读回导出文件"), error);
+
+    check(data.connections.size() == store.connections().size(),
+          QStringLiteral("连接数量一致"),
+          QStringLiteral("%1 / %2").arg(data.connections.size()).arg(store.connections().size()));
+    check(data.groups.size() == store.groups().size(),
+          QStringLiteral("分组数量一致"));
+    check(data.history.size() == store.history().size(),
+          QStringLiteral("历史数量一致"));
+    check(data.keys.size() == keys.keys().size(),
+          QStringLiteral("密钥数量一致"));
+
+    // 密码应当以明文原样往返（不打印内容）
+    bool secretsOk = true;
+    for (const Connection &original : store.connections()) {
+        const Connection *imported = nullptr;
+        for (const Connection &candidate : data.connections) {
+            if (candidate.id == original.id) {
+                imported = &candidate;
+                break;
+            }
+        }
+        if (!imported || imported->password != original.password) {
+            secretsOk = false;
+            break;
+        }
+    }
+    check(secretsOk, QStringLiteral("密码明文原样往返"));
+
+    // 不是 EmShell 的 JSON 要拒绝
+    const QString bogusPath =
+        QDir::temp().filePath(QStringLiteral("emshell-transfer-bogus.json"));
+    {
+        QFile bogus(bogusPath);
+        if (bogus.open(QIODevice::WriteOnly | QIODevice::Text))
+            bogus.write("{\"format\":\"something-else\",\"connections\":[]}");
+    }
+    ConfigTransfer::ImportData ignored;
+    error.clear();
+    check(!ConfigTransfer::readImportFile(bogusPath, &ignored, &error),
+          QStringLiteral("拒绝非 EmShell 配置文件"));
+
+    // ---- 合并 / 替换：用临时目录里的独立 Store，不碰用户真实数据 ----
+    QTemporaryDir tempDir;
+    check(tempDir.isValid(), QStringLiteral("创建临时目录"));
+    if (tempDir.isValid()) {
+        const QString connPath = tempDir.filePath(QStringLiteral("connections.json"));
+        const QString keyPath = tempDir.filePath(QStringLiteral("keys.json"));
+
+        ConnectionStore localStore(connPath);
+        KeyStore localKeys(keyPath);
+        localStore.load();   // 文件不存在：预置两个默认分组并落盘
+        localKeys.load();
+
+        Connection existing = Connection::create(QStringLiteral("existing"),
+                                                 QStringLiteral("10.0.0.1"),
+                                                 QStringLiteral("root"));
+        existing.password = QStringLiteral("old");
+        localStore.addConnection(existing);
+
+        const int groupsBefore = localStore.groups().size();
+
+        ConfigTransfer::ImportData incoming;
+        ConnectionGroup group(QStringLiteral("导入分组"));
+        group.id = QStringLiteral("imported-group");
+        incoming.groups << group;
+
+        Connection imported = Connection::create(QStringLiteral("imported"),
+                                                 QStringLiteral("10.0.0.2"),
+                                                 QStringLiteral("root"));
+        imported.id = QStringLiteral("imported-conn");
+        imported.password = QStringLiteral("new");
+        incoming.connections << imported;
+
+        HistoryEntry history;
+        history.connectionId = imported.id;
+        history.name = imported.name;
+        history.host = imported.host;
+        history.at = QDateTime::currentDateTime();
+        incoming.history << history;
+
+        SshKey key;
+        key.id = QStringLiteral("imported-key");
+        key.name = QStringLiteral("key");
+        key.privateKeyPath = tempDir.filePath(QStringLiteral("id_ed25519"));
+        incoming.keys << key;
+
+        localStore.importSnapshot(incoming.connections, incoming.groups,
+                                  incoming.history, false);
+        localKeys.importSnapshot(incoming.keys, false);
+
+        check(localStore.connections().size() == 2, QStringLiteral("合并导入连接"));
+        check(localStore.groups().size() == groupsBefore + 1,
+              QStringLiteral("合并导入分组"));
+        check(localStore.history().size() == 1, QStringLiteral("合并导入历史"));
+        check(localKeys.keys().size() == 1, QStringLiteral("合并导入密钥"));
+
+        // 同 ID 再导一次：不产生重复，内容被文件里的版本覆盖
+        Connection updated = imported;
+        updated.password = QStringLiteral("updated");
+        localStore.importSnapshot({ updated }, {}, {}, false);
+        check(localStore.connections().size() == 2,
+              QStringLiteral("同 ID 合并不产生重复"));
+        const Connection *found = localStore.find(imported.id);
+        check(found && found->password == QStringLiteral("updated"),
+              QStringLiteral("同 ID 合并会覆盖内容"));
+
+        // 重新从磁盘读一份，确认确实落盘了
+        ConnectionStore reread(connPath);
+        reread.load();
+        check(reread.connections().size() == 2, QStringLiteral("导入结果已落盘"));
+        check(reread.groups().size() == groupsBefore + 1,
+              QStringLiteral("导入的分组已落盘"));
+
+        // 替换：清空后写入空集合
+        localStore.importSnapshot({}, {}, {}, true);
+        localKeys.importSnapshot({}, true);
+        check(localStore.connections().isEmpty(), QStringLiteral("替换会清空连接"));
+        check(localStore.groups().isEmpty(), QStringLiteral("替换会清空分组"));
+        check(localKeys.keys().isEmpty(), QStringLiteral("替换会清空密钥"));
+    }
+
+    QFile::remove(exportPath);
+    QFile::remove(bogusPath);
 
     flushLog();
     return g_fail == 0 ? 0 : 1;
@@ -1721,6 +1887,7 @@ bool isSelfTestRequest(const QStringList &arguments)
 {
     return arguments.contains(QStringLiteral("--selftest"))
            || arguments.contains(QStringLiteral("--updatetest"))
+           || arguments.contains(QStringLiteral("--transfertest"))
            || arguments.contains(QStringLiteral("--updateui"))
            || arguments.contains(QStringLiteral("--dialogui"))
            || arguments.contains(QStringLiteral("--settingsui"))
@@ -1769,6 +1936,8 @@ int runSelfTest(const QStringList &arguments)
         return runUpdateCheck();
     if (arguments.contains(QStringLiteral("--updatetest")))
         return runUpdateTest();
+    if (arguments.contains(QStringLiteral("--transfertest")))
+        return runTransferTest();
     if (arguments.contains(QStringLiteral("--uishots")))
         return runUiShots(arguments);
     if (arguments.contains(QStringLiteral("--uidump")))
