@@ -2,6 +2,8 @@
 
 #include <QWidget>
 
+class QEvent;
+
 class QVBoxLayout;
 
 namespace Em {
@@ -19,6 +21,10 @@ public:
 
 signals:
     void statusMessage(const QString &text);
+
+protected:
+    // 钥匙图标颜色是建行时取的，配色变了整页重建一次
+    void changeEvent(QEvent *event) override;
 
 private:
     void rebuild();

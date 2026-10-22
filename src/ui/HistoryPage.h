@@ -2,6 +2,8 @@
 
 #include <QWidget>
 
+class QEvent;
+
 class QLabel;
 class QPushButton;
 class QVBoxLayout;
@@ -21,6 +23,10 @@ public:
 signals:
     void reconnectRequested(const QString &connectionId);
     void statusMessage(const QString &text);
+
+protected:
+    // 图标和状态点的颜色是建行时取的，配色变了整页重建一次
+    void changeEvent(QEvent *event) override;
 
 private:
     void rebuild();

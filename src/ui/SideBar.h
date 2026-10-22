@@ -3,6 +3,8 @@
 #include <QHash>
 #include <QWidget>
 
+class QEvent;
+
 class QPushButton;
 class QVBoxLayout;
 
@@ -47,6 +49,11 @@ public:
     // 「软件更新」右边显示发现的新版本号（红色徽标）。传空串表示隐藏。
     // MainWindow 在静默检查或手动检查拿到结果后调它。
     void setUpdateAvailable(const QString &version);
+
+protected:
+    // 配色切换：侧栏里有两处图标颜色是烘在 pixmap 里的
+    // （「+ 新建连接」的加号、分组标题右边的加号）
+    void changeEvent(QEvent *event) override;
 
 signals:
     void pageRequested(AppPage page);

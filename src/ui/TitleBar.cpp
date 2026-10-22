@@ -5,6 +5,7 @@
 #include "ui/Widgets.h"
 
 #include <QApplication>
+#include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPixmap>
@@ -81,6 +82,15 @@ void TitleBar::setMaximized(bool maximized)
 {
     m_maxButton->setIcon(Icons::icon(maximized ? Icon::Restore : Icon::Maximize,
                                      Theme::color(QStringLiteral("brand-sub")), 15));
+}
+
+void TitleBar::changeEvent(QEvent *event)
+{
+    // 最大化 / 还原图标是烘好的，配色变了要按新 token 重画。
+    // 另外两个窗口按钮的图标由 WindowButton::changeEvent 自己处理。
+    if (event->type() == QEvent::ThemeChange && m_maxButton)
+        setMaximized(window() && window()->isMaximized());
+    QWidget::changeEvent(event);
 }
 
 } // namespace Em

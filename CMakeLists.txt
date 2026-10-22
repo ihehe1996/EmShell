@@ -42,6 +42,11 @@ qt_add_executable(EmShell WIN32
     src/app/AppConfig.h
     src/app/Theme.h
     src/app/Theme.cpp
+    # 配色：一个文件一套（Palette.h 里是登记机制，Theme.cpp 只管取色）
+    src/app/palettes/Palette.h
+    src/app/palettes/PaletteRegistry.cpp
+    src/app/palettes/DarkPalette.cpp
+    src/app/palettes/LightPalette.cpp
 
     src/model/Connection.h
     src/model/Connection.cpp

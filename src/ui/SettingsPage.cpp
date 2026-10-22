@@ -221,12 +221,12 @@ SettingsPage::SettingsPage(ConnectionStore *store, QWidget *parent)
 
     connect(m_paletteBox, &QComboBox::currentIndexChanged, this, [this] {
         Em::Theme::setPaletteKey(m_paletteBox->currentData().toString());
-        emit statusMessage(QStringLiteral("配色已切换为「%1」，重启 EmShell 后完全生效")
+        emit statusMessage(QStringLiteral("配色已切换为「%1」")
                                .arg(m_paletteBox->currentText()));
     });
 
     auto *themeHint = makeLabel(
-        QStringLiteral("图标颜色是在创建控件时定好的，所以换配色需要重启一次才能真正干净。"),
+        QStringLiteral("切换后立即生效，不需要重启。"),
         "hint", appearanceCard);
     themeHint->setWordWrap(true);
 

@@ -19,6 +19,7 @@
 
 #include <QApplication>
 #include <QCloseEvent>
+#include <QEvent>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QSystemTrayIcon>
@@ -99,7 +100,8 @@ protected:
 // 让底下 #Root 的 bg-app 透上来。
 //
 // 它只包住 QStackedWidget，不包侧栏和标题栏 —— 背景图是「内容区」的装饰，
-// 侧栏那条深色轨道要保持实心，不然导航项会浮在照片上。
+// 侧栏那条有色轨道要保持自己的底（玻璃态时单独按 nav-bg-glass 半透明），
+// 不能直接让图透上来，否则导航项会浮在照片上。
 class BackgroundHost : public QWidget
 {
 public:
@@ -588,8 +590,13 @@ void MainWindow::applyNativeTitleBarTheme()
 
 void MainWindow::changeEvent(QEvent *event)
 {
-    if (event->type() == QEvent::WindowStateChange && m_titleBar)
+    if (event->type() == QEvent::WindowStateChange && m_titleBar) {
         m_titleBar->setMaximized(isMaximized());
+    } else if (event->type() == QEvent::ThemeChange) {
+        // 背景图的蒙层色、「新建连接」/ 搜索框的玻璃透明度、
+        // 侧栏的 glass 属性都跟主题色挂钩，换配色后按新 token 重算一遍。
+        reloadBackground();
+    }
     QWidget::changeEvent(event);
 }
 

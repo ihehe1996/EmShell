@@ -12,6 +12,7 @@
 #include <QVector>
 #include <QWidget>
 
+class QEvent;
 class QShowEvent;
 class QVBoxLayout;
 
@@ -140,6 +141,12 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
     void enterEvent(QEnterEvent *event) override;
     void leaveEvent(QEvent *event) override;
+    // 配色切换：图标颜色是构造时烘进 pixmap 的，收到 ThemeChange 要重画
+    void changeEvent(QEvent *event) override;
+
+private:
+    Icon m_icon;
+    QLabel *m_iconBox = nullptr;
 };
 
 // ---------------------------------------------------------------------------
@@ -159,6 +166,9 @@ public:
     void setLeadingIcon(Icon which, int size = 15);
     // 只有图标、没有文字的紧凑按钮
     void makeCompact(Icon which, int size = 15, const QString &tooltip = QString());
+
+protected:
+    void changeEvent(QEvent *event) override;
 
 private:
     void refreshIcon();
@@ -186,8 +196,13 @@ protected:
     void paintEvent(QPaintEvent *event) override;
     void enterEvent(QEnterEvent *event) override;
     void leaveEvent(QEvent *event) override;
+    void changeEvent(QEvent *event) override;
 
 private:
+    // 弹出列表的样式只能挂在 view 自己身上（见 .cpp 里的说明）。
+    // 配色变了要重挂一遍。
+    void applyPopupStyle();
+
     bool m_hover = false;
 };
 
@@ -237,6 +252,8 @@ protected:
     // 而且子控件的样式也不会跟着按钮的状态自动重算，只能自己盯着进出事件刷。
     void enterEvent(QEnterEvent *event) override;
     void leaveEvent(QEvent *event) override;
+    // 配色切换后图标颜色要重新生成
+    void changeEvent(QEvent *event) override;
 
 private:
     // 把当前的 active / hover 状态刷到图标、文字和数字上。状态一变就要调，
@@ -269,6 +286,7 @@ protected:
     // 所以 QIcon 里预烘的那版悬停色根本用不上 —— 只能自己盯着进出事件换。
     void enterEvent(QEnterEvent *event) override;
     void leaveEvent(QEvent *event) override;
+    void changeEvent(QEvent *event) override;
 
 private:
     void refreshIcon();
@@ -298,12 +316,15 @@ signals:
 
 protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
+    void changeEvent(QEvent *event) override;
 
 private:
     bool m_expanded = true;
     QLabel *m_chevron = nullptr;
+    QLabel *m_folder = nullptr;
     QLabel *m_name = nullptr;
     QLabel *m_count = nullptr;
+    QColor m_folderColor;
 };
 
 // 连接列表的表头。列宽权重和 ConnectionRow 里的是同一组常量（见 Widgets.cpp），
@@ -421,6 +442,8 @@ signals:
 protected:
     // 页面切回来时补一次探测（缓存 60 秒内不会重复发）
     void showEvent(QShowEvent *event) override;
+    // 行里的图标颜色是建行时烘进去的，配色变了整表重建一次最省心
+    void changeEvent(QEvent *event) override;
 
 private:
     void rebuild();

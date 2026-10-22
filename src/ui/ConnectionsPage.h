@@ -4,6 +4,7 @@
 
 #include <QWidget>
 
+class QEvent;
 class QLabel;
 class QLineEdit;
 
@@ -44,6 +45,10 @@ public:
 signals:
     void connectRequested(const Connection &connection);
     void statusMessage(const QString &text);
+
+protected:
+    // 分组页标题前那个色点的兜底色来自主题，配色变了要重算
+    void changeEvent(QEvent *event) override;
 
 private:
     void applyFilters();

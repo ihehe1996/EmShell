@@ -1092,6 +1092,94 @@ int runComboShot()
 }
 
 // ---------------------------------------------------------------------------
+// 实时切换配色（不写 QSettings）：切到另一套，隔一会儿截图。
+//   --themeswitchui
+//
+// 产出 themeswitch_before.png / themeswitch_after.png。这个模式存在的意义是
+// 卡住「切了配色但只有 QSS 变、烘进图标的颜色没变」这类回归 ——
+// 两张图完全一样就判失败。
+// ---------------------------------------------------------------------------
+int runThemeSwitchShot()
+{
+    QFile::remove(QStringLiteral("selftest.log"));
+    log(QStringLiteral("== 实时切换配色 =="));
+
+    ConnectionStore store;
+    store.load();
+    KeyStore keys;
+    keys.load();
+
+    MainWindow window(&store, &keys);
+    window.resize(1380, 880);
+    window.show();
+
+    const QString original = Theme::paletteKey();
+    QString other;
+    for (const Theme::Palette &palette : Theme::palettes()) {
+        if (palette.key != original) {
+            other = palette.key;
+            break;
+        }
+    }
+    if (other.isEmpty()) {
+        log(QStringLiteral("  [FAIL] 只有一套配色，没法验证切换"));
+        ++g_fail;
+        return 1;
+    }
+
+    QTimer::singleShot(1200, &window, [&window, original, other] {
+        const QImage before = window.grab().toImage();
+        if (before.save(QStringLiteral("themeswitch_before.png")))
+            log(QStringLiteral("  已保存 themeswitch_before.png"));
+
+        // 侧栏的图标全是烘进 pixmap 的，又没有会随时间变的文字，
+        // 拿它做前后对比最干净（整个窗口里有「N 分钟前」和延迟，会抖）。
+        SideBar *sidebar = window.findChild<SideBar *>();
+        const QImage beforeSidebar = sidebar ? sidebar->grab().toImage() : QImage();
+
+        Theme::setPaletteKey(other, false);
+        log(QStringLiteral("  已从 %1 切到 %2，等界面刷新").arg(original, other));
+
+        QTimer::singleShot(900, &window, [&window, original, beforeSidebar] {
+            const QImage after = window.grab().toImage();
+            if (after.save(QStringLiteral("themeswitch_after.png")))
+                log(QStringLiteral("  已保存 themeswitch_after.png"));
+
+            SideBar *sidebar = window.findChild<SideBar *>();
+            const QImage afterSidebar = sidebar ? sidebar->grab().toImage() : QImage();
+            if (!beforeSidebar.isNull() && beforeSidebar == afterSidebar) {
+                log(QStringLiteral("  [FAIL] 切完配色侧栏截图没变，图标颜色没有跟着换"));
+                ++g_fail;
+            } else {
+                log(QStringLiteral("  [OK] 侧栏已按新配色重绘（含烘进 pixmap 的图标）"));
+            }
+
+            // 用户实际是在设置页换配色的，再在设置页抓一张：
+            // 卡片、输入框、下拉框这些都在这一页上。
+            if (auto *settings = window.findChild<SettingsPage *>()) {
+                if (auto *stack = window.findChild<QStackedWidget *>())
+                    stack->setCurrentWidget(settings);
+            }
+
+            QTimer::singleShot(600, &window, [&window, original] {
+                if (window.grab().save(QStringLiteral("themeswitch_settings.png")))
+                    log(QStringLiteral("  已保存 themeswitch_settings.png"));
+
+                // 切回原配色（同样不落盘），别影响后续截图
+                Theme::setPaletteKey(original, false);
+                qApp->quit();
+            });
+        });
+    });
+
+    QTimer::singleShot(10000, [] { qApp->quit(); });
+    qApp->exec();
+
+    flushLog();
+    return g_fail == 0 ? 0 : 1;
+}
+
+// ---------------------------------------------------------------------------
 // 连通性检测截图：等探测跑完（最多几秒），把窗口抓下来。
 //   --probeui
 // ---------------------------------------------------------------------------
@@ -1636,6 +1724,7 @@ bool isSelfTestRequest(const QStringList &arguments)
            || arguments.contains(QStringLiteral("--updateui"))
            || arguments.contains(QStringLiteral("--dialogui"))
            || arguments.contains(QStringLiteral("--settingsui"))
+           || arguments.contains(QStringLiteral("--themeswitchui"))
            || arguments.contains(QStringLiteral("--comboui"))
            || arguments.contains(QStringLiteral("--updatepageui"))
            || arguments.contains(QStringLiteral("--probeui"))
@@ -1666,6 +1755,8 @@ int runSelfTest(const QStringList &arguments)
         return runProbeShot();
     if (arguments.contains(QStringLiteral("--settingsui")))
         return runSettingsShot();
+    if (arguments.contains(QStringLiteral("--themeswitchui")))
+        return runThemeSwitchShot();
     if (arguments.contains(QStringLiteral("--comboui")))
         return runComboShot();
     if (arguments.contains(QStringLiteral("--updatepageui")))

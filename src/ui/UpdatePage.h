@@ -2,6 +2,9 @@
 
 #include <QWidget>
 
+class QEvent;
+class QLabel;
+
 namespace Em {
 
 // 「软件更新」页：版本信息 + 关于信息，点按钮交给 MainWindow 弹 UpdateDialog。
@@ -18,6 +21,13 @@ public:
 
 signals:
     void checkUpdateRequested();
+
+protected:
+    // 富文本链接颜色走 QPalette::Link，QSS 管不到；配色变了要重设
+    void changeEvent(QEvent *event) override;
+
+private:
+    QLabel *m_homeLink = nullptr;
 };
 
 } // namespace Em

@@ -453,9 +453,11 @@ void TerminalView::paintEvent(QPaintEvent *)
             m_font.setUnderline(false);
             m_font.setStrikeOut(false);
             p.setFont(m_font);
-            // 光标是一块实色；底下那个字要用背景色「抠」出来。
-            // 背景全透明时抠不了，改用前景色重画一遍。
-            p.setPen(termBg.alpha() == 0 ? colors.fg : termBg);
+            // 光标是一块实色；底下那个字要用和光标反差最大的颜色重画一遍。
+            // 背景全透明时抠不了，所以走专用的 term-cursor-text：
+            // 深色主题的光标是亮蓝、字用白色，浅色主题的光标是深蓝、字也用白色。
+            // （以前是直接拿 term-fg 画，浅色下会变成深蓝底深灰字。）
+            p.setPen(Theme::color(QStringLiteral("term-cursor-text")));
             p.drawText(QPointF(cursorRect.left(), cursorRect.top() + m_ascent),
                        QString::fromUcs4(&line[cx].ch, 1));
         }

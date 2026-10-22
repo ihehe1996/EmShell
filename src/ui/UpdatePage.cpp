@@ -13,6 +13,7 @@
 #include <QPixmap>
 #include <QScrollArea>
 #include <QVBoxLayout>
+#include <QEvent>
 
 namespace Em {
 
@@ -105,18 +106,18 @@ UpdatePage::UpdatePage(QWidget *parent) : QWidget(parent)
     auto *aboutCard = new Card(this);
     auto *aboutTitle = makeLabel(QStringLiteral("关于"), "sectionTitle", aboutCard);
 
-    auto *home = makeLabel(
+    m_homeLink = makeLabel(
         QStringLiteral("<a href=\"https://www.boshou.me\">www.boshou.me</a>"),
         "aboutValue", aboutCard);
-    home->setTextFormat(Qt::RichText);
-    home->setOpenExternalLinks(true);
-    home->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    m_homeLink->setTextFormat(Qt::RichText);
+    m_homeLink->setOpenExternalLinks(true);
+    m_homeLink->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    // 富文本里的链接颜色走 QPalette::Link，QSS 的 color 管不到。
     {
-        // 富文本里的链接颜色走 QPalette::Link，QSS 的 color 管不到。
-        QPalette palette = home->palette();
+        QPalette palette = m_homeLink->palette();
         palette.setColor(QPalette::Link, Theme::color(QStringLiteral("accent-text")));
         palette.setColor(QPalette::LinkVisited, Theme::color(QStringLiteral("accent-text")));
-        home->setPalette(palette);
+        m_homeLink->setPalette(palette);
     }
 
     auto *form = new QFormLayout;
@@ -127,7 +128,7 @@ UpdatePage::UpdatePage(QWidget *parent) : QWidget(parent)
     form->setFormAlignment(Qt::AlignLeft | Qt::AlignTop);
     form->addRow(makeLabel(QStringLiteral("开发语言"), "fieldLabel", aboutCard),
                  makeLabel(QStringLiteral("C++ / Qt 6"), "aboutValue", aboutCard));
-    form->addRow(makeLabel(QStringLiteral("作者主页"), "fieldLabel", aboutCard), home);
+    form->addRow(makeLabel(QStringLiteral("作者主页"), "fieldLabel", aboutCard), m_homeLink);
     form->addRow(makeLabel(QStringLiteral("作者 QQ"), "fieldLabel", aboutCard),
                  makeLabel(QStringLiteral("10220739"), "aboutValue", aboutCard));
 
@@ -169,6 +170,18 @@ UpdatePage::UpdatePage(QWidget *parent) : QWidget(parent)
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
     root->addWidget(scroll);
+}
+
+
+void UpdatePage::changeEvent(QEvent *event)
+{
+    if (event->type() == QEvent::ThemeChange && m_homeLink) {
+        QPalette palette = m_homeLink->palette();
+        palette.setColor(QPalette::Link, Theme::color(QStringLiteral("accent-text")));
+        palette.setColor(QPalette::LinkVisited, Theme::color(QStringLiteral("accent-text")));
+        m_homeLink->setPalette(palette);
+    }
+    QWidget::changeEvent(event);
 }
 
 } // namespace Em

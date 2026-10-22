@@ -80,15 +80,16 @@ QPushButton[role="winbtn"][kind="close"]:pressed { background: @win-close-hover;
 
 /* -------------------------------------------------------------- 侧边栏 --- */
 
-/* 侧栏是**深色轨道**，和浅色内容区形成强对比。
-   它整条链路都用 nav-* 那套 token —— 全局的 text-dim / text-mute 是给白底
-   准备的深色字，放这儿就是黑底黑字。 */
+/* 侧栏是一条**有色轨道**：深色主题下是深轨，浅色主题下是淡蓝灰轨。
+   它整条链路都用 nav-* 那套 token（跟着配色一起翻），
+   不要拿全局的 text-dim / text-mute 来画轨道上的字 —— 那两个是给卡片底
+   准备的，深色主题下放上去就是黑底黑字。 */
 #SideBar {
     background: @nav-bg;
     border-right: 1px solid @nav-line;
 }
 /* 设了背景图时整条侧栏也透出一点图（MainWindow 会给它挂 glass=true）。
-   用半透明而不是全透明：侧栏上的文字是浅灰，直接压在照片上会读不清。
+   用半透明而不是全透明：侧栏上的文字要压在照片上读，太透会花。
    属性一变由 MainWindow::reloadBackground() 调 repolish()。 */
 #SideBar[glass="true"] {
     background: @nav-bg-glass;
@@ -96,8 +97,8 @@ QPushButton[role="winbtn"][kind="close"]:pressed { background: @win-close-hover;
 
 #SideBarScroll { background: transparent; border: none; }
 
-/* 侧栏自己那根滚动条也要跟着深色轨道走。不改的话，深底上会拖一条浅灰的条 —— 
-   全局那套 QScrollBar 的 handle 用的是 @border-strong，是给浅色底准备的。 */
+/* 侧栏自己那根滚动条也要跟着轨道走。不改的话，深色轨道上会拖一条
+   给白卡片准备的浅灰条；浅色轨道上的对比也不够。 */
 #SideBar QScrollBar::handle:vertical              { background: @nav-hover-bg; }
 #SideBar QScrollBar::handle:vertical:hover        { background: @nav-group; }
 
@@ -190,7 +191,7 @@ QLabel[role="navText"][state="active"] { color: @nav-text-active; }
    这里只管背景。
    **不写 min-height**：那条会跟代码里的 setFixedSize(20,20) 打架，把高度
    撑到三十几，方形按钮变成长方形（QSS 的 min-height 会清掉最大高度）。
-   hover 必须用 nav-* 那套：这是深色轨道，白底那套 bg-hover 在这儿会读反。 */
+   hover 必须用 nav-* 那套：这是有色轨道，卡片那套 bg-hover 在这儿会读反。 */
 #NavGroupAdd {
     background: transparent;
     border: none;
@@ -201,7 +202,7 @@ QLabel[role="navText"][state="active"] { color: @nav-text-active; }
 #NavGroupAdd:pressed { background: @nav-highlight-bg; }
 
 /* 分组区块空着时那行提示。用 nav-group（和标题同色）就够淡了，
-   千万别用全局的 text-mute —— 那是给白底准备的深灰，在深轨道上看不见。 */
+   别用全局的 text-mute —— 它是给卡片底准备的，在有色轨道上不合适。 */
 QLabel[role="navSectionEmpty"] {
     color: @nav-group;
     font-size: 11px;
@@ -660,8 +661,9 @@ QMenu::separator { height: 1px; background: @border-strong; margin: 4px 6px; }
 QDialog { background: @bg-app; }
 
 /* 新建 / 编辑连接：无边框对话框，描边自己补（和主窗口 #Root 一个道理）。
-   结构是**左栏深色信息条 + 右栏表单**：左栏复用侧栏那套 nav-* token，
-   在浅色主题下自然形成参考图里那种「深色侧条 + 浅色表单」的对比。 */
+   结构是**左栏信息条 + 右栏表单**：左栏复用侧栏那套 nav-* token，
+   跟着配色一起翻（深色主题是深轨，浅色主题是淡蓝灰轨），
+   和右栏靠明度 / 色相差分开。 */
 /* 底色 / 背景图 / 描边由 DialogBackground::paintEvent 画，这里保持透明，
    免得 QSS 再铺一层实色把图盖掉（和主窗口 #Root 同理）。 */
 /* 底色 / 背景图 / 描边由 DialogBackground::paintEvent 画，这里保持透明，
@@ -848,13 +850,13 @@ QTabBar { background: transparent; qproperty-drawBase: 0; }
    也**不要**加 max-width（加了会把长名字压回去）或 margin-bottom
    （标签矩形会比画出来的盒子高，文字和关闭按钮就不居中了）。 */
 /* Code Editor 风格：方形标签、标签之间 1px 分隔线、没有圆角。
-   标签栏是固定的深色 #1F2430（两套配色都一样），所以文字必须用给深色轨道
-   准备的 nav-text 系列，**不能**用 text-dim / text —— 浅色主题下那两个是
-   深灰色，放在这条深色标签栏上根本看不见。
+   标签栏是固定的深色 #1F2430（两套配色都一样），所以文字用标签栏专用的
+   term-tab-text 系列：浅色主题的侧栏是浅底、nav-text 在那里是深灰，
+   放到这条深色栏上根本看不见。也**不能**用 text-dim / text。
    选中标签铺终端同色的 #282C34，和下面的终端连成一体。 */
 QTabBar::tab {
     background: transparent;
-    color: @nav-text;
+    color: @term-tab-text;
     border-right: 1px solid @term-tab-sep;
     /* 下边框和右边框都留着 1px 位置：未选中时底边透明，露出轨道的线；
        选中时底边变成 #0B0D12，这样「选项卡下面那条边框」在选中标签下面
@@ -875,18 +877,18 @@ QTabBar::tab {
 }
 QTabBar::tab:hover {
     background: @term-tab-hover-bg;
-    color: @nav-text-hover;
+    color: @term-tab-text-hover;
 }
 /* 选中标签铺 #282C34（和终端同色），底部的 1px 分隔线会被它盖住，
    看起来就是当前标签直接连着终端内容。别加粗，原因同上。 */
 QTabBar::tab:selected {
     background: @term-tab-active-bg;
-    color: @nav-cta-text;
+    color: @term-tab-text-active;
     border-bottom-color: @term-rail-line;
 }
 QTabBar::tab:selected:hover {
     background: @term-tab-active-bg;
-    color: @nav-cta-text;
+    color: @term-tab-text-active;
     border-bottom-color: @term-rail-line;
 }
 

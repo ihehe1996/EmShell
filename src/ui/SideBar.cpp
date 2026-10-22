@@ -8,6 +8,7 @@
 
 #include <QDesktopServices>
 #include <QEnterEvent>
+#include <QEvent>
 #include <QLabel>
 #include <QHBoxLayout>
 #include <QMenu>
@@ -40,12 +41,11 @@ public:
         setCursor(Qt::PointingHandCursor);
         setFocusPolicy(Qt::NoFocus);
 
-        auto *iconLabel = new QLabel(this);
-        iconLabel->setFixedSize(13, 13);
-        iconLabel->setPixmap(Icons::pixmap(Icon::Plus,
-                                           Theme::color(QStringLiteral("nav-cta-text")), 13));
-        // 三个孩子都要让鼠标事件穿过去，不然压在图标/文字上时按钮收不到点击
-        iconLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+        m_iconLabel = new QLabel(this);
+        m_iconLabel->setFixedSize(13, 13);
+        // 孩子都要让鼠标事件穿过去，不然压在图标/文字上时按钮收不到点击
+        m_iconLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+        refreshIcon();
 
         auto *textLabel = makeLabel(text, "ctaText", this);
         textLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -58,12 +58,34 @@ public:
         layout->setContentsMargins(12, 0, 12, 0);
         layout->setSpacing(0);
         layout->addStretch();
-        layout->addWidget(iconLabel);
+        layout->addWidget(m_iconLabel);
         layout->addSpacing(4);
         layout->addWidget(textLabel);
         layout->addStretch();
     }
+
+    // 图标颜色烘在 pixmap 里，配色变了要重新画
+    void refreshIcon()
+    {
+        m_iconLabel->setPixmap(Icons::pixmap(Icon::Plus,
+                                             Theme::color(QStringLiteral("nav-cta-text")), 13));
+    }
+
+private:
+    QLabel *m_iconLabel = nullptr;
 };
+
+// 分组标题行右边那个「+」的图标。正常 / 悬停两版都烘好；
+// SideBar::changeEvent 里换配色时会重新调它。
+QIcon groupAddIcon()
+{
+    QIcon icon;
+    icon.addPixmap(Icons::pixmap(Icon::Plus, Theme::color(QStringLiteral("nav-group")), 14),
+                   QIcon::Normal, QIcon::Off);
+    icon.addPixmap(Icons::pixmap(Icon::Plus, Theme::color(QStringLiteral("nav-text-hover")), 14),
+                   QIcon::Active, QIcon::Off);
+    return icon;
+}
 
 // 侧栏底部的推荐链接。就是一行普通文字，悬停才出现下划线；点了去外部网站。
 // 不做卡片、不加图标 —— 侧栏里已经有「新建连接」和导航项两层视觉，再多一块
@@ -149,12 +171,7 @@ QWidget *groupHeaderRow(const QString &text, QWidget *parent, QPushButton **outA
 
     // 图标颜色是烘进 pixmap 的，QSS 管不到；悬停变亮只能预先烘一版
     // Active 状态的（QPushButton 在鼠标悬停时就是用 Active 那版画的）。
-    QIcon plus;
-    plus.addPixmap(Icons::pixmap(Icon::Plus, Theme::color(QStringLiteral("nav-group")), 14),
-                   QIcon::Normal, QIcon::Off);
-    plus.addPixmap(Icons::pixmap(Icon::Plus, Theme::color(QStringLiteral("nav-text-hover")), 14),
-                   QIcon::Active, QIcon::Off);
-    add->setIcon(plus);
+    add->setIcon(groupAddIcon());
     add->setIconSize(QSize(14, 14));
 
     layout->addWidget(add);
@@ -318,6 +335,23 @@ void SideBar::setGlassOpacity(int percent)
                        "QPushButton#SideBarCta:pressed { background: %2; }")
             .arg(tinted(Theme::color(QStringLiteral("nav-cta-bg"))),
                  tinted(Theme::color(QStringLiteral("nav-cta-bg-hover")))));
+}
+
+void SideBar::changeEvent(QEvent *event)
+{
+    if (event->type() == QEvent::ThemeChange) {
+        // 这两处图标颜色是在创建时烘进 pixmap 的，跟着新配色重画一遍。
+        // 导航项自己的图标由 NavButton::changeEvent 处理。
+        if (m_cta)
+            static_cast<SideBarCta *>(m_cta)->refreshIcon();
+        for (QPushButton *add : findChildren<QPushButton *>(QStringLiteral("NavGroupAdd")))
+            add->setIcon(groupAddIcon());
+
+        // 「+ 新建连接」的底色是内联样式（跟背景图蒙层浓度联动），
+        // 基色换了要重算。MainWindow 收到同一个事件后会调 reloadBackground()，
+        // 那里已经会重设；这里不用重复。
+    }
+    QWidget::changeEvent(event);
 }
 
 void SideBar::refreshCounts()

@@ -16,6 +16,7 @@
 #include <QScrollArea>
 #include <QUuid>
 #include <QVBoxLayout>
+#include <QEvent>
 
 namespace Em {
 
@@ -325,6 +326,14 @@ void ConnectionsPage::applyFilters()
     // 数量从列表里拿，别在这儿再算一遍 —— 筛选规则只该有一份。
     if (m_count)
         m_count->setText(QStringLiteral("%1 台").arg(m_list->visibleCount()));
+}
+
+
+void ConnectionsPage::changeEvent(QEvent *event)
+{
+    if (event->type() == QEvent::ThemeChange)
+        refreshGroupHeader();
+    QWidget::changeEvent(event);
 }
 
 } // namespace Em

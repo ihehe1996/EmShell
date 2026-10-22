@@ -23,6 +23,9 @@ public:
     // 最大化状态变了，右下角那个按钮要在「最大化 / 还原」之间切图标
     void setMaximized(bool maximized);
 
+protected:
+    void changeEvent(QEvent *event) override;
+
 signals:
     void minimizeRequested();
     void maximizeRestoreRequested();

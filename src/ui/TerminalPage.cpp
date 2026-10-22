@@ -66,6 +66,18 @@ public:
     explicit TerminalTabBar(QWidget *parent = nullptr) : QTabBar(parent) {}
 
 protected:
+    // 配色切换后滚动箭头的图标颜色要重烘一遍。
+    // m_scrollPolishDone 是「只 polish 一次」的闸，这里放开它，
+    // 下一次 paintEvent 会按新 token 重新生成箭头。
+    void changeEvent(QEvent *event) override
+    {
+        if (event->type() == QEvent::ThemeChange) {
+            m_scrollPolishDone = false;
+            update();
+        }
+        QTabBar::changeEvent(event);
+    }
+
     // 自己摆每个标签的关闭按钮 —— **不要**用 QTabBar::setTabButton()。
     //
     // 挂上去之后 Qt 会在文字区里额外扣一圈（扣得比控件本身还宽约 9px），那 9px 不论
@@ -173,7 +185,7 @@ private:
             return;
         m_scrollPolishDone = true;
 
-        const QColor color = Theme::color(QStringLiteral("nav-text"));
+        const QColor color = Theme::color(QStringLiteral("term-tab-text"));
         for (QToolButton *b : findChildren<QToolButton *>()) {
             const bool left = b->objectName() == QLatin1String("ScrollLeftButton");
             const bool right = b->objectName() == QLatin1String("ScrollRightButton");
@@ -300,15 +312,29 @@ public:
         // 不给 tooltip：一个 ✕ 上飘个「关闭」的气泡纯属碍事，鼠标扫过时很吵
         setFixedSize(kTabCloseSize, kTabCloseSize);
 
-        const int iconSize = 11;
-        setIconSize(QSize(iconSize, iconSize));
+        setIconSize(QSize(kIconSize, kIconSize));
+        refreshIcon();
+    }
 
+protected:
+    void changeEvent(QEvent *event) override
+    {
+        if (event->type() == QEvent::ThemeChange)
+            refreshIcon();
+        QToolButton::changeEvent(event);
+    }
+
+private:
+    static constexpr int kIconSize = 11;
+
+    void refreshIcon()
+    {
         QIcon closeIcon;
         closeIcon.addPixmap(Icons::pixmap(Icon::Close,
-                                          Theme::color(QStringLiteral("nav-text")), iconSize),
+                                          Theme::color(QStringLiteral("term-tab-text")), kIconSize),
                             QIcon::Normal, QIcon::Off);
         // 悬停时整块底色变红（QSS），✕ 跟着变白
-        closeIcon.addPixmap(Icons::pixmap(Icon::Close, Qt::white, iconSize),
+        closeIcon.addPixmap(Icons::pixmap(Icon::Close, Qt::white, kIconSize),
                             QIcon::Active, QIcon::Off);
         setIcon(closeIcon);
     }
@@ -328,15 +354,30 @@ public:
         setFixedSize(kTabNewButtonSize, kTabNewButtonSize);
         setToolTip(QStringLiteral("新建本地终端"));
 
-        const int iconSize = 14;
-        setIconSize(QSize(iconSize, iconSize));
+        setIconSize(QSize(kIconSize, kIconSize));
+        refreshIcon();
+    }
 
+protected:
+    void changeEvent(QEvent *event) override
+    {
+        if (event->type() == QEvent::ThemeChange)
+            refreshIcon();
+        QToolButton::changeEvent(event);
+    }
+
+private:
+    static constexpr int kIconSize = 14;
+
+    void refreshIcon()
+    {
         QIcon plusIcon;
         plusIcon.addPixmap(Icons::pixmap(Icon::Plus,
-                                         Theme::color(QStringLiteral("nav-text")), iconSize),
+                                         Theme::color(QStringLiteral("term-tab-text")), kIconSize),
                            QIcon::Normal, QIcon::Off);
         plusIcon.addPixmap(Icons::pixmap(Icon::Plus,
-                                         Theme::color(QStringLiteral("nav-text-hover")), iconSize),
+                                         Theme::color(QStringLiteral("term-tab-text-hover")),
+                                         kIconSize),
                            QIcon::Active, QIcon::Off);
         setIcon(plusIcon);
     }

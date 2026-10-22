@@ -6,6 +6,7 @@
 #include "ui/Widgets.h"
 
 #include <QDateTime>
+#include <QEvent>
 #include <QHBoxLayout>
 #include <QMessageBox>
 #include <QMouseEvent>
@@ -295,6 +296,14 @@ void HistoryPage::rebuild()
     }
 
     m_layout->addStretch();
+}
+
+
+void HistoryPage::changeEvent(QEvent *event)
+{
+    if (event->type() == QEvent::ThemeChange)
+        rebuild();
+    QWidget::changeEvent(event);
 }
 
 } // namespace Em

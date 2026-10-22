@@ -11,8 +11,10 @@
 #include "update/UpdateInstaller.h"
 
 #include <QApplication>
+#include <QEvent>
 #include <QIcon>
 #include <QTimer>
+#include <QWidget>
 
 int main(int argc, char *argv[])
 {
@@ -41,6 +43,30 @@ int main(int argc, char *argv[])
     // 不装样式表的话看到的是 Fusion 默认外观，会被误当成界面出了问题。
     app.setFont(Em::Theme::uiFont(14));
     app.setStyleSheet(Em::Theme::styleSheet());
+
+    // 运行时换配色：重装一次样式表，再给每个控件发一个 ThemeChange。
+    //
+    // 只调 setStyleSheet 不够 —— QSS 的颜色会立刻换掉，但图标颜色是构造时用
+    // Theme::color() 烘进 QPixmap / QIcon 的（侧栏、窗口按钮、标签上的 ✕ 和
+    // ＋、列表操作按钮…），Qt 不会再问一遍主题。各控件在 changeEvent 里
+    // 收到 ThemeChange 就重新生成自己那几张图。
+    //
+    // 延后到事件循环里做：切换动作是从设置页的下拉框里发出来的，同步重装
+    // 样式表会把正在关闭的弹出列表一起 polish，容易出怪状态。
+    QObject::connect(&Em::Theme::instance(), &Em::Theme::paletteChanged,
+                     &app,
+                     [&app] {
+        QTimer::singleShot(0, &app, [&app] {
+            app.setStyleSheet(Em::Theme::styleSheet());
+
+            const QWidgetList widgets = QApplication::allWidgets();
+            for (QWidget *w : widgets) {
+                QEvent event(QEvent::ThemeChange);
+                QCoreApplication::sendEvent(w, &event);
+                w->update();
+            }
+        });
+    });
 
     // 自检模式：跑完就退
     if (Em::isSelfTestRequest(app.arguments()))

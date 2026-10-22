@@ -8,6 +8,7 @@
 #include <QContextMenuEvent>
 #include <QDateTime>
 #include <QDesktopServices>
+#include <QEvent>
 #include <QHBoxLayout>
 #include <QLinearGradient>
 #include <QListView>
@@ -179,8 +180,8 @@ QLabel *makeLabel(const QString &text, const char *role, QWidget *parent)
 
 QColor groupAccent(const ConnectionGroup &group)
 {
-    // nav-text-active 就是侧栏「当前页」那个蓝，压在深色轨道上最醒目；
-    // 它在浅色内容区（连接列表的分组头）上也够深，两处都能用
+    // nav-text-active 就是侧栏「当前页」那个蓝，在有色轨道上最醒目；
+    // 它压在浅色内容区（连接列表的分组头）上也够深，两处都能用
     return group.color.isEmpty() ? tokenColor("nav-text-active") : QColor(group.color);
 }
 
@@ -291,6 +292,7 @@ void EdgeShadow::paintEvent(QPaintEvent *)
 
 ActionTile::ActionTile(Icon icon, const QString &title, const QString &desc, QWidget *parent)
     : QFrame(parent)
+    , m_icon(icon)
 {
     setProperty("role", QStringLiteral("tile"));
     setCursor(Qt::PointingHandCursor);
@@ -301,11 +303,11 @@ ActionTile::ActionTile(Icon icon, const QString &title, const QString &desc, QWi
     // 撑到 1000px 以上，右侧面板被挤出窗口。显式设了之后，文字会在卡片里换行。
     setMinimumWidth(132);
 
-    auto *iconBox = new QLabel(this);
-    iconBox->setObjectName(QStringLiteral("TileIcon"));
-    iconBox->setFixedSize(38, 38);
-    iconBox->setAlignment(Qt::AlignCenter);
-    iconBox->setPixmap(Icons::pixmap(icon, tokenColor("accent-text"), 20));
+    m_iconBox = new QLabel(this);
+    m_iconBox->setObjectName(QStringLiteral("TileIcon"));
+    m_iconBox->setFixedSize(38, 38);
+    m_iconBox->setAlignment(Qt::AlignCenter);
+    m_iconBox->setPixmap(Icons::pixmap(m_icon, tokenColor("accent-text"), 20));
 
     auto *titleLabel = makeLabel(title, "tileTitle", this);
     auto *descLabel = makeLabel(desc, "tileDesc", this);
@@ -314,7 +316,7 @@ ActionTile::ActionTile(Icon icon, const QString &title, const QString &desc, QWi
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(15, 14, 15, 14);
     layout->setSpacing(3);
-    layout->addWidget(iconBox);
+    layout->addWidget(m_iconBox);
     layout->addSpacing(7);
     layout->addWidget(titleLabel);
     layout->addWidget(descLabel);
@@ -326,6 +328,13 @@ void ActionTile::mouseReleaseEvent(QMouseEvent *event)
     if (event->button() == Qt::LeftButton && rect().contains(event->position().toPoint()))
         emit clicked();
     QFrame::mouseReleaseEvent(event);
+}
+
+void ActionTile::changeEvent(QEvent *event)
+{
+    if (event->type() == QEvent::ThemeChange && m_iconBox)
+        m_iconBox->setPixmap(Icons::pixmap(m_icon, tokenColor("accent-text"), 20));
+    QFrame::changeEvent(event);
 }
 
 void ActionTile::enterEvent(QEnterEvent *event)
@@ -381,6 +390,13 @@ void PillButton::makeCompact(Icon which, int size, const QString &tooltip)
     repolish(this);
 }
 
+void PillButton::changeEvent(QEvent *event)
+{
+    if (event->type() == QEvent::ThemeChange)
+        refreshIcon();
+    QPushButton::changeEvent(event);
+}
+
 void PillButton::refreshIcon()
 {
     if (!m_hasIcon)
@@ -433,9 +449,26 @@ SelectBox::SelectBox(QWidget *parent)
 {
     setCursor(Qt::PointingHandCursor);
 
-    // 弹出列表的样式**必须挂到列表自己身上**，写进 app.qss 不管用。
-    // 弹出列表挂在一个独立的弹出容器上，全局那条匹配链在这里靠不住。
-    //
+    // 去掉当前项那圈焦点框，只能用 delegate，QSS 关不掉
+    view()->setItemDelegate(new PlainItemDelegate(view()));
+
+    applyPopupStyle();
+}
+
+void SelectBox::changeEvent(QEvent *event)
+{
+    if (event->type() == QEvent::ThemeChange)
+        applyPopupStyle();
+    QComboBox::changeEvent(event);
+}
+
+// 弹出列表的样式**必须挂到列表自己身上**，写进 app.qss 不管用。
+// 弹出列表挂在一个独立的弹出容器上，全局那条匹配链在这里靠不住。
+void SelectBox::applyPopupStyle()
+{
+    if (!view())
+        return;
+
     // 颜色走 Theme::color() 取 token，不要写死色值。
     const QString bg = Theme::color(QStringLiteral("bg-elevated")).name();
     const QString line = Theme::color(QStringLiteral("border-strong")).name();
@@ -446,13 +479,11 @@ SelectBox::SelectBox(QWidget *parent)
     const QString hoverBg = Theme::color(QStringLiteral("bg-hover")).name(QColor::HexArgb);
     const QString selText = Theme::color(QStringLiteral("accent-text")).name();
 
-    // 去掉当前项那圈焦点框，只能用 delegate，QSS 关不掉
-    view()->setItemDelegate(new PlainItemDelegate(view()));
-
     // 弹出列表外面还套着一层 QComboBox 自己的弹出容器，它默认会画一圈方框。
     // 那个容器从外面拿不到（没有公开类型），只能顺着 view 的父控件摸过去，
     // 把底色 / 边框 / 圆角设在它身上，里面的列表保持透明 —— 这样整块弹出
     // 只有一条边框，圆角也能露出来。
+    // 容器是弹出时才建的，所以这里判空；showPopup() 里还会再调一次。
     if (QWidget *container = view()->parentWidget()) {
         container->setStyleSheet(QStringLiteral("QFrame { background: %1;"
                                                 "         border: 1px solid %2;"
@@ -727,6 +758,14 @@ void NavButton::leaveEvent(QEvent *event)
     QPushButton::leaveEvent(event);
 }
 
+void NavButton::changeEvent(QEvent *event)
+{
+    // 图标是烘进 pixmap 的，配色变了要按新 token 重新生成
+    if (event->type() == QEvent::ThemeChange)
+        refreshState();
+    QPushButton::changeEvent(event);
+}
+
 void NavButton::refreshState()
 {
     // 图标颜色和文字保持同一档：正常情况下图标比文字浅的话，在白底侧栏上
@@ -784,6 +823,13 @@ void WindowButton::refreshIcon()
                         13));
 }
 
+void WindowButton::changeEvent(QEvent *event)
+{
+    if (event->type() == QEvent::ThemeChange)
+        refreshIcon();
+    QPushButton::changeEvent(event);
+}
+
 void WindowButton::enterEvent(QEnterEvent *event)
 {
     m_hover = true;
@@ -811,9 +857,10 @@ GroupHeader::GroupHeader(const QString &name, int count, const QColor &color, QW
     m_chevron->setFixedSize(14, 14);
     m_chevron->setPixmap(Icons::pixmap(Icon::ChevronDown, tokenColor("text-mute"), 14));
 
-    auto *folder = new QLabel(this);
-    folder->setFixedSize(17, 17);
-    folder->setPixmap(Icons::pixmap(Icon::Folder, color, 17));
+    m_folder = new QLabel(this);
+    m_folder->setFixedSize(17, 17);
+    m_folderColor = color;
+    m_folder->setPixmap(Icons::pixmap(Icon::Folder, m_folderColor, 17));
 
     m_name = makeLabel(name, "groupName", this);
     m_count = makeLabel(QStringLiteral("(%1)").arg(count), "groupCount", this);
@@ -822,10 +869,22 @@ GroupHeader::GroupHeader(const QString &name, int count, const QColor &color, QW
     layout->setContentsMargins(6, 0, 10, 0);
     layout->setSpacing(7);
     layout->addWidget(m_chevron);
-    layout->addWidget(folder);
+    layout->addWidget(m_folder);
     layout->addWidget(m_name);
     layout->addWidget(m_count);
     layout->addStretch();
+}
+
+void GroupHeader::changeEvent(QEvent *event)
+{
+    // 三角用的是主题色，文件夹图标用的是分组色（可能来自主题兜底）。
+    // 配色变了都重画一遍。
+    if (event->type() == QEvent::ThemeChange) {
+        m_chevron->setPixmap(Icons::pixmap(m_expanded ? Icon::ChevronDown : Icon::ChevronRight,
+                                           tokenColor("text-mute"), 14));
+        m_folder->setPixmap(Icons::pixmap(Icon::Folder, m_folderColor, 17));
+    }
+    QFrame::changeEvent(event);
 }
 
 void GroupHeader::setExpanded(bool expanded)
@@ -1471,6 +1530,15 @@ void ConnectionList::rebuild()
     m_layout->addStretch();
     if (isVisible())
         requestProbes();
+}
+
+void ConnectionList::changeEvent(QEvent *event)
+{
+    // 行里的星标 / 连接 / 更多图标和空状态图标都是建控件时烘进去的。
+    // 整表重建最简单，也保证分组圆点的兜底色跟着换。
+    if (event->type() == QEvent::ThemeChange)
+        rebuild();
+    QWidget::changeEvent(event);
 }
 
 } // namespace Em

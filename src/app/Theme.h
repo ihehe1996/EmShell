@@ -15,8 +15,9 @@ namespace Em {
 // 由 Theme::styleSheet() 在加载时替换成当前配色表里的真实色值 ——
 // 所以加一套配色**不用碰样式表，也不用碰任何一个控件**。
 //
-// 加新配色只有一步：在 Theme.cpp 的 paletteEntries() 里加一行。
-// 色值表本身留在 Theme.cpp，不往外暴露，外面只需要知道有哪些配色可选。
+// 加新配色只要新建一个配色文件（src/app/palettes/ 下照 DarkPalette.cpp
+// 抄一份改色值），文件末尾用 PaletteRegistrar 登记自己，再加进 CMakeLists。
+// 色值表本身留在各自的配色文件里，外面只需要知道有哪些配色可选。
 class Theme : public QObject
 {
     Q_OBJECT
@@ -30,13 +31,16 @@ public:
 
     static Theme &instance();
 
-    // 所有可选的配色。顺序就是设置页下拉框里的顺序，第一项是默认。
+    // 所有可选的配色，已按 PaletteSpec::order 排好序（设置页下拉框直接用）。
+    // 默认配色不一定排在第一项，见 PaletteSpec::isDefault。
     static QVector<Palette> palettes();
 
     // 当前配色。存在 QSettings 里，也可以用环境变量 EMSHELL_THEME 临时覆盖。
-    // 改完需要重启才完全生效 —— 图标颜色是构造时烘进 QIcon 的，运行时换不干净。
+    // 运行时切换会发 paletteChanged()：main.cpp 负责重装样式表并给所有
+    // 控件发 ThemeChange，烘进 QIcon 的图标颜色由各控件自己重画。
     static QString paletteKey();
-    static void setPaletteKey(const QString &key);
+    // persist=false 只切换当前进程的配色，不写 QSettings（自检 / 临时预览用）。
+    static void setPaletteKey(const QString &key, bool persist = true);
 
     // 取一个颜色，name 就是 QSS 里写的 token 名（不带 @）
     static QColor color(const QString &token);
@@ -56,6 +60,12 @@ public:
 
     // 终端里的 16 色 ANSI 调色板，索引 0-15
     static const QColor *ansiPalette();
+
+signals:
+    // 配色真的变了（setPaletteKey 传入的是另一个 key）之后发一次。
+    // 注意：色值缓存已经更新完才发。main.cpp 收到后重装样式表，
+    // 再给所有控件发 ThemeChange，让烘进 QIcon 的颜色重新生成。
+    void paletteChanged();
 
 private:
     Theme() = default;

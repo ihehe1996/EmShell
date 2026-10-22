@@ -6,6 +6,7 @@
 #include "ui/Widgets.h"
 
 #include <QApplication>
+#include <QEvent>
 #include <QClipboard>
 #include <QComboBox>
 #include <QDialog>
@@ -256,6 +257,14 @@ void KeysPage::rebuild()
     }
 
     m_layout->addStretch();
+}
+
+
+void KeysPage::changeEvent(QEvent *event)
+{
+    if (event->type() == QEvent::ThemeChange)
+        rebuild();
+    QWidget::changeEvent(event);
 }
 
 } // namespace Em
