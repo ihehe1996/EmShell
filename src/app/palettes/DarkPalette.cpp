@@ -5,7 +5,7 @@ namespace Em {
 namespace {
 
 // ---------------------------------------------------------------------------
-// 深色主题（默认）
+// 深色主题
 // ---------------------------------------------------------------------------
 const PaletteTable &darkTable()
 {
@@ -143,9 +143,9 @@ static_assert(sizeof(kDarkAnsi) / sizeof(kDarkAnsi[0]) == kAnsiColorCount,
 
 const PaletteRegistrar kDarkRegistrar({
     QStringLiteral("dark"),
-    QStringLiteral("深色（默认）"),
-    0,
-    true,
+    QStringLiteral("深色"),
+    10,
+    false,
     &darkTable(),
     kDarkAnsi,
 });

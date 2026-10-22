@@ -5,7 +5,7 @@ namespace Em {
 namespace {
 
 // ---------------------------------------------------------------------------
-// 浅色主题
+// 浅色主题（默认）
 //
 // 整窗都浅：侧栏、画布、卡片三块台阶，靠色相和明度差拿层次，不用描边堆。
 //     侧栏  #E9EEFA   淡紫蓝的有色轨道，最"有色"，也是最暗的一块
@@ -173,9 +173,9 @@ static_assert(sizeof(kLightAnsi) / sizeof(kLightAnsi[0]) == kAnsiColorCount,
 
 const PaletteRegistrar kLightRegistrar({
     QStringLiteral("light"),
-    QStringLiteral("浅色"),
-    10,
-    false,
+    QStringLiteral("浅色（默认）"),
+    0,
+    true,
     &lightTable(),
     kLightAnsi,
 });
