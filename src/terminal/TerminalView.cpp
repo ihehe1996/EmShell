@@ -700,9 +700,10 @@ void TerminalView::showNotice(const QString &text, bool defer, bool blankLineBef
         //  - 连接开始时的那几条是紧接着写的（false）：上一条已经用 \r\n 收尾，
         //    光标就在新行行首，再补一个 \r\n 只会多出一整行空白。
         //
-        // SGR 2 = 暗淡。渲染时会拿当前前景色再压暗一档，深色 / 浅色主题都适用，
-        // 不用在这里写死颜色。
-        const QString line = QStringLiteral("\x1b[2m%1\x1b[0m\r\n").arg(text);
+        // 提示行用终端默认前景色（两套主题下都是接近白的浅色），不再压暗。
+        // 开头先 SGR 0：远端输出可能留下颜色 / 加粗，不清掉的话这行会跟着染色；
+        // 结尾再复位，避免影响后面的输出。
+        const QString line = QStringLiteral("\x1b[0m%1\x1b[0m\r\n").arg(text);
         m_screen->feed(((blankLineBefore ? QStringLiteral("\r\n") : QString()) + line).toUtf8());
         m_screen->clearDirty();
         update();
