@@ -850,16 +850,16 @@ QTabBar { background: transparent; qproperty-drawBase: 0; }
    也**不要**加 max-width（加了会把长名字压回去）或 margin-bottom
    （标签矩形会比画出来的盒子高，文字和关闭按钮就不居中了）。 */
 /* Code Editor 风格：方形标签、标签之间 1px 分隔线、没有圆角。
-   标签栏是固定的深色 #1F2430（两套配色都一样），所以文字用标签栏专用的
-   term-tab-text 系列：浅色主题的侧栏是浅底、nav-text 在那里是深灰，
-   放到这条深色栏上根本看不见。也**不能**用 text-dim / text。
-   选中标签铺终端同色的 #282C34，和下面的终端连成一体。 */
+   轨道底色跟着配色走：深色主题是深色，浅色主题是浅灰（各配色文件里的
+   term-rail-* 那组）。文字用标签栏专用的 term-tab-text 系列，
+   **不能**借用 nav-text / text-dim / text —— 它们属于别的层级。
+   选中标签铺 term-tab-active-bg，和下面的终端连成一体。 */
 QTabBar::tab {
     background: transparent;
     color: @term-tab-text;
     border-right: 1px solid @term-tab-sep;
     /* 下边框和右边框都留着 1px 位置：未选中时底边透明，露出轨道的线；
-       选中时底边变成 #0B0D12，这样「选项卡下面那条边框」在选中标签下面
+       选中时底边变成 term-rail-line，这样「选项卡下面那条边框」在选中标签下面
        也照样存在（否则会被它的实色底盖掉）。 */
     border-bottom: 1px solid transparent;
     /* 左边 14；右边 20。文字在内容区居中，多出来的宽度正好放状态圆点和
@@ -879,7 +879,8 @@ QTabBar::tab:hover {
     background: @term-tab-hover-bg;
     color: @term-tab-text-hover;
 }
-/* 选中标签铺 #282C34（和终端同色），底部的 1px 分隔线会被它盖住，
+/* 选中标签铺 term-tab-active-bg（深色主题和终端同色，浅色主题是画布色），
+   底部的 1px 分隔线会被它盖住，
    看起来就是当前标签直接连着终端内容。别加粗，原因同上。 */
 QTabBar::tab:selected {
     background: @term-tab-active-bg;

@@ -287,8 +287,8 @@ protected:
         QPainter p(this);
         p.setPen(Qt::NoPen);
         p.fillRect(rect(), Theme::color(QStringLiteral("term-rail-bg")));
-        // 标签栏底部那条 1px 边框（#0B0D12）。选中标签铺的是不透明的
-        // #282C34，会把自己底下这一段盖住，看起来和终端连成一体。
+        // 标签栏底部那条 1px 边框（term-rail-line）。选中标签铺的是不透明的
+        // term-tab-active-bg，会把自己底下这一段盖住，看起来和终端连成一体。
         p.fillRect(QRect(0, height() - 1, width(), 1),
                    Theme::color(QStringLiteral("term-rail-line")));
     }

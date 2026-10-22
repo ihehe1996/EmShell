@@ -111,21 +111,22 @@ const PaletteTable &lightTable()
         { QStringLiteral("win-hover"),       QStringLiteral("rgba(21, 27, 43, 0.06)") },
         { QStringLiteral("win-close-hover"), QStringLiteral("rgba(198, 40, 40, 0.12)") },
 
-        // 终端标签栏在每套配色里都是**深色**。浅色主题和深色主题共用这一组值。
-        // 标签文字 / 图标用 term-tab-text 这一组：浅色主题下 nav-text 是深灰，
-        // 放到这条 #1F2430 上根本看不见。
-        { QStringLiteral("term-rail-bg"),        QStringLiteral("#1F2430") },
-        { QStringLiteral("term-rail-line"),      QStringLiteral("#0B0D12") },
-        { QStringLiteral("term-tab-hover-bg"),   QStringLiteral("rgba(255, 255, 255, 0.06)") },
-        { QStringLiteral("term-tab-sep"),        QStringLiteral("#0B0D12") },
-        { QStringLiteral("term-tab-active-bg"),  QStringLiteral("#282C34") },
-        { QStringLiteral("term-tab-close-line"), QStringLiteral("#3A3F4B") },
-        { QStringLiteral("term-tab-text"),        QStringLiteral("#9BA3B4") },
-        { QStringLiteral("term-tab-text-hover"),  QStringLiteral("#E8EAF0") },
-        { QStringLiteral("term-tab-text-active"), QStringLiteral("#FFFFFF") },
-        { QStringLiteral("term-tab-ok"),         QStringLiteral("#3FB950") },
-        { QStringLiteral("term-tab-err"),        QStringLiteral("#F0553D") },
-        { QStringLiteral("term-tab-wait"),       QStringLiteral("#8A93A5") },
+        // 终端标签栏跟着配色走：浅色主题是一条浅灰轨道，选中标签用画布色
+        // （#F7F8FC），和下面的终端连成一体；顶部 2px 蓝条仍然用 nav-cta-bg。
+        // 标签文字 / 图标用 term-tab-text 这一组 —— 它们是标签栏专用的，
+        // 不要借 nav-text（侧栏的交互态会让它跟着变）。
+        { QStringLiteral("term-rail-bg"),        QStringLiteral("#EDF0F7") },
+        { QStringLiteral("term-rail-line"),      QStringLiteral("#D8DFEA") },
+        { QStringLiteral("term-tab-hover-bg"),   QStringLiteral("rgba(21, 27, 43, 0.05)") },
+        { QStringLiteral("term-tab-sep"),        QStringLiteral("#D8DFEA") },
+        { QStringLiteral("term-tab-active-bg"),  QStringLiteral("#F7F8FC") },
+        { QStringLiteral("term-tab-close-line"), QStringLiteral("#C9D2E4") },
+        { QStringLiteral("term-tab-text"),        QStringLiteral("#5A6478") },
+        { QStringLiteral("term-tab-text-hover"),  QStringLiteral("#161D2C") },
+        { QStringLiteral("term-tab-text-active"), QStringLiteral("#161D2C") },
+        { QStringLiteral("term-tab-ok"),         QStringLiteral("#0B7A45") },
+        { QStringLiteral("term-tab-err"),        QStringLiteral("#C62828") },
+        { QStringLiteral("term-tab-wait"),       QStringLiteral("#6F7994") },
 
         // 终端背景保持**全透明**：文字直接画在浅色画布 / 背景图上。
         // 前景色必须是深色 —— 深色主题那套浅灰字放到这里等于白底白字。

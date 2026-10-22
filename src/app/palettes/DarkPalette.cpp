@@ -84,9 +84,9 @@ const PaletteTable &darkTable()
         { QStringLiteral("win-hover"),       QStringLiteral("rgba(255, 255, 255, 0.07)") },
         { QStringLiteral("win-close-hover"), QStringLiteral("rgba(240, 85, 61, 0.22)") },
 
-        // 终端标签栏在每套配色里都是**深色**。深色 / 浅色两套共用这一组值：
-        // 标签栏 #1F2430，选中标签 #282C34，分隔线和底边 #0B0D12
-        // （深红 / 墨绿在自己的文件里给了染色版本）。
+        // 终端标签栏是深色轨道：标签栏 #1F2430，选中标签 #282C34，
+        // 分隔线和底边 #0B0D12。浅色主题在 LightPalette.cpp 里另有浅色值，
+        // 深红 / 墨绿各自给了染色版本。
         // 标签上的文字 / 图标**用 term-tab-text 这一组，不要用 nav-text** ——
         // 浅色主题的侧栏是浅底，nav-text 会跟着变成深灰，放到这条深色栏上
         // 就看不见了。
