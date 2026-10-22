@@ -114,6 +114,11 @@ QPushButton[role="winbtn"][kind="close"]:pressed { background: @win-close-hover;
 #SideBarCta:pressed { background: @nav-cta-bg-hover; }
 QLabel[role="ctaText"] { font-size: 12px; color: @nav-cta-text; }
 
+/* 侧栏底部的推荐文字链接。就是一行普通文字，不做卡片；
+   悬停时颜色提亮 + 下划线（下划线在 SideBarLink 里改字体，QSS 管不到）。 */
+QLabel[role="sideLink"] { font-size: 12px; color: @nav-text; }
+QLabel[role="sideLink"][hover="true"] { color: @nav-text-hover; }
+
 /* 导航项。整行就是一个圆角块，里面的留白由 NavButton 自己的布局控制，
    所以这里的 padding 必须归零 —— 不然两种留白叠在一起，图标会飘。 */
 QPushButton[role="nav"] {

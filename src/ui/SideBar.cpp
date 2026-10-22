@@ -6,12 +6,16 @@
 #include "ui/IconProvider.h"
 #include "ui/Widgets.h"
 
+#include <QDesktopServices>
+#include <QEnterEvent>
 #include <QLabel>
 #include <QHBoxLayout>
 #include <QMenu>
 #include <QMessageBox>
+#include <QMouseEvent>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QUrl>
 #include <QVBoxLayout>
 
 namespace Em {
@@ -59,6 +63,55 @@ public:
         layout->addWidget(textLabel);
         layout->addStretch();
     }
+};
+
+// 侧栏底部的推荐链接。就是一行普通文字，悬停才出现下划线；点了去外部网站。
+// 不做卡片、不加图标 —— 侧栏里已经有「新建连接」和导航项两层视觉，再多一块
+// 有色块的卡片会显得吵。
+class SideBarLink : public QLabel
+{
+public:
+    explicit SideBarLink(const QString &text, const QUrl &url, QWidget *parent = nullptr)
+        : QLabel(text, parent)
+        , m_url(url)
+    {
+        setProperty("role", QStringLiteral("sideLink"));
+        setCursor(Qt::PointingHandCursor);
+        setAlignment(Qt::AlignCenter);
+    }
+
+protected:
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton)
+            QDesktopServices::openUrl(m_url);
+        QLabel::mouseReleaseEvent(event);
+    }
+
+    void enterEvent(QEnterEvent *event) override
+    {
+        setHovered(true);
+        QLabel::enterEvent(event);
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        setHovered(false);
+        QLabel::leaveEvent(event);
+    }
+
+private:
+    void setHovered(bool hovered)
+    {
+        QFont f = font();
+        f.setUnderline(hovered);
+        setFont(f);
+
+        setProperty("hover", hovered);
+        repolish(this);
+    }
+
+    QUrl m_url;
 };
 
 // 分组标题。不做 toUpper、不加 letter-spacing：这两样是给拉丁字母准备的，
@@ -203,6 +256,17 @@ SideBar::SideBar(ConnectionStore *store, QWidget *parent)
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
     root->addWidget(scroll);
+
+    // 推荐链接固定在侧栏最底部，不跟着导航滚动，整行居中。
+    auto *link = new SideBarLink(QStringLiteral("服务器 + 域名 一站式提供"),
+                                 QUrl(QStringLiteral("https://idc.empass6.com/")), this);
+
+    auto *linkWrap = new QWidget(this);
+    auto *linkLayout = new QVBoxLayout(linkWrap);
+    linkLayout->setContentsMargins(10, 0, 10, 12);
+    linkLayout->setSpacing(0);
+    linkLayout->addWidget(link);
+    root->addWidget(linkWrap);
 
     if (m_store) {
         connect(m_store, &ConnectionStore::connectionsChanged, this, &SideBar::refreshCounts);
