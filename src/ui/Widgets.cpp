@@ -404,7 +404,7 @@ void PillButton::refreshIcon()
 
     QColor c;
     switch (m_variant) {
-    case Primary: c = QColor(Qt::white);          break;
+    case Primary: c = tokenColor("accent-on");    break;
     case Danger:  c = tokenColor("err");          break;
     case Ghost:
     case Subtle:  c = tokenColor("text-dim");     break;
@@ -606,7 +606,7 @@ void CheckBox::paintEvent(QPaintEvent *event)
     if (!box.isValid())
         return;
 
-    const QPixmap check = Icons::pixmap(Icon::Check, QColor(Qt::white), 12);
+    const QPixmap check = Icons::pixmap(Icon::Check, tokenColor("accent-on"), 12);
     const QSizeF size = check.deviceIndependentSize();
     QPainter painter(this);
     painter.drawPixmap(QPointF(box.center().x() - size.width() / 2,

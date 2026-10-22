@@ -84,6 +84,7 @@ const PaletteTable &lightTable()
         { QStringLiteral("accent-soft"),  QStringLiteral("rgba(47, 79, 216, 0.10)") },
         { QStringLiteral("accent-line"),  QStringLiteral("#C2CDF3") },
         { QStringLiteral("accent-text"),  QStringLiteral("#2A46C9") },
+        { QStringLiteral("accent-on"),    QStringLiteral("#FFFFFF") },
 
         // 状态色：都在白底上量过，绿 / 黄 / 红都比深色主题暗一档
         { QStringLiteral("ok"),       QStringLiteral("#0B7A45") },
@@ -110,7 +111,7 @@ const PaletteTable &lightTable()
         { QStringLiteral("win-hover"),       QStringLiteral("rgba(21, 27, 43, 0.06)") },
         { QStringLiteral("win-close-hover"), QStringLiteral("rgba(198, 40, 40, 0.12)") },
 
-        // 终端标签栏是**固定深色**（两套配色共用这一组值）。
+        // 终端标签栏在每套配色里都是**深色**。浅色主题和深色主题共用这一组值。
         // 标签文字 / 图标用 term-tab-text 这一组：浅色主题下 nav-text 是深灰，
         // 放到这条 #1F2430 上根本看不见。
         { QStringLiteral("term-rail-bg"),        QStringLiteral("#1F2430") },

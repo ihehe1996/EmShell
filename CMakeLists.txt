@@ -47,6 +47,8 @@ qt_add_executable(EmShell WIN32
     src/app/palettes/PaletteRegistry.cpp
     src/app/palettes/DarkPalette.cpp
     src/app/palettes/LightPalette.cpp
+    src/app/palettes/RedPalette.cpp
+    src/app/palettes/GreenPalette.cpp
 
     src/model/Connection.h
     src/model/Connection.cpp

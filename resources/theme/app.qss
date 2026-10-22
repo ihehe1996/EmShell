@@ -358,7 +358,7 @@ QPushButton[role="pill"][compact="true"] {
 
 QPushButton[role="pill"][variant="primary"] {
     background: @accent;
-    color: #FFFFFF;
+    color: @accent-on;
 }
 QPushButton[role="pill"][variant="primary"]:hover   { background: @accent-hover; }
 QPushButton[role="pill"][variant="primary"]:pressed { background: @accent-press; }
@@ -419,7 +419,7 @@ QLineEdit {
     font-size: 13px;
     color: @text;
     selection-background-color: @accent;
-    selection-color: #FFFFFF;
+    selection-color: @accent-on;
 }
 QLineEdit:hover { border-color: @text-mute; }
 QLineEdit:focus { border-color: @accent; }
@@ -519,7 +519,7 @@ QTextEdit {
     font-size: 13px;
     color: @text;
     selection-background-color: @accent;
-    selection-color: #FFFFFF;
+    selection-color: @accent-on;
 }
 QTextEdit:focus { border-color: @accent; }
 

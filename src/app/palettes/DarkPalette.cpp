@@ -59,6 +59,9 @@ const PaletteTable &darkTable()
         { QStringLiteral("accent-soft"),  QStringLiteral("rgba(91, 124, 250, 0.14)") },
         { QStringLiteral("accent-line"),  QStringLiteral("#3A4770") },
         { QStringLiteral("accent-text"),  QStringLiteral("#9DB4FF") },
+        // 压在实心 accent 上的文字 / 图标（主按钮、选中文本、复选框对勾）。
+        // 荧光色配色（墨绿）要把这一项改成深色，不能写死白色。
+        { QStringLiteral("accent-on"),    QStringLiteral("#FFFFFF") },
 
         { QStringLiteral("ok"),       QStringLiteral("#3FB950") },
         { QStringLiteral("warn"),     QStringLiteral("#D6A32B") },
@@ -81,8 +84,9 @@ const PaletteTable &darkTable()
         { QStringLiteral("win-hover"),       QStringLiteral("rgba(255, 255, 255, 0.07)") },
         { QStringLiteral("win-close-hover"), QStringLiteral("rgba(240, 85, 61, 0.22)") },
 
-        // 终端标签栏是**固定深色**（两套配色共用这一组值）：
-        // 标签栏 #1F2430，选中标签 #282C34，分隔线和底边 #0B0D12。
+        // 终端标签栏在每套配色里都是**深色**。深色 / 浅色两套共用这一组值：
+        // 标签栏 #1F2430，选中标签 #282C34，分隔线和底边 #0B0D12
+        // （深红 / 墨绿在自己的文件里给了染色版本）。
         // 标签上的文字 / 图标**用 term-tab-text 这一组，不要用 nav-text** ——
         // 浅色主题的侧栏是浅底，nav-text 会跟着变成深灰，放到这条深色栏上
         // 就看不见了。
