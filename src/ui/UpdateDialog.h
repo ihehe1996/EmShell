@@ -67,6 +67,7 @@ private:
 
     QLabel *m_headline = nullptr;
     QLabel *m_detail = nullptr;
+    QWidget *m_notesBox = nullptr;      // 「更新内容」标题 + 正文，一起显示 / 隐藏
     QTextBrowser *m_notes = nullptr;
     QProgressBar *m_progress = nullptr;
     QLabel *m_progressText = nullptr;   // 进度条只有 6px 高，文字另放一行

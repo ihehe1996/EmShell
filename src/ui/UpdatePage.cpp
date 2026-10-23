@@ -7,9 +7,9 @@
 
 #include <QApplication>
 #include <QFormLayout>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QPalette>
 #include <QPixmap>
 #include <QScrollArea>
 #include <QVBoxLayout>
@@ -45,26 +45,52 @@ UpdatePage::UpdatePage(QWidget *parent) : QWidget(parent)
     auto *updateCard = new Card(this);
 
     auto *mark = new QLabel(updateCard);
-    mark->setFixedSize(44, 44);
-    mark->setPixmap(logoPixmap(44));
+    mark->setFixedSize(56, 56);
+    mark->setPixmap(logoPixmap(56));
 
     auto *appName = makeLabel(QStringLiteral("EmShell"), "appName", updateCard);
-    auto *appMeta = makeLabel(QStringLiteral("v%1 · Windows 上的服务器连接工具")
-                                                  .arg(appVersion()),
+    appName->setObjectName(QStringLiteral("UpdateAppName"));
+
+    auto *appMeta = makeLabel(QStringLiteral("Windows 上的服务器连接工具"),
                               "appMeta", updateCard);
+
+    // 版本号单独做成一颗小药丸，和标题、说明分开，比塞在一行里清楚。
+    auto *versionChip = makeLabel(QStringLiteral("v%1").arg(appVersion()),
+                                  "aboutValue", updateCard);
+    versionChip->setObjectName(QStringLiteral("UpdateVersionChip"));
+    versionChip->setFont(Theme::monoFont(11));
+    versionChip->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+
+    auto *chipRow = new QHBoxLayout;
+    chipRow->setContentsMargins(0, 0, 0, 0);
+    chipRow->setSpacing(0);
+    chipRow->addWidget(versionChip);
+    chipRow->addStretch();
 
     auto *nameBox = new QVBoxLayout;
     nameBox->setContentsMargins(0, 0, 0, 0);
-    nameBox->setSpacing(3);
+    nameBox->setSpacing(4);
     nameBox->addWidget(appName);
     nameBox->addWidget(appMeta);
-    nameBox->addStretch();
+    nameBox->addSpacing(2);
+    nameBox->addLayout(chipRow);
+
+    auto *checkButton = new PillButton(QStringLiteral("检查更新"), PillButton::Primary, updateCard);
+    checkButton->setLeadingIcon(Icon::Refresh, 15);
+    connect(checkButton, &QPushButton::clicked, this, &UpdatePage::checkUpdateRequested);
 
     auto *header = new QHBoxLayout;
     header->setContentsMargins(0, 0, 0, 0);
-    header->setSpacing(14);
+    header->setSpacing(18);
     header->addWidget(mark, 0, Qt::AlignTop);
     header->addLayout(nameBox, 1);
+    header->addWidget(checkButton, 0, Qt::AlignTop);
+
+    auto *divider = new QFrame(updateCard);
+    divider->setObjectName(QStringLiteral("UpdateDivider"));
+    divider->setFixedHeight(1);
+
+    auto *section = makeLabel(QStringLiteral("自动更新"), "fieldLabel", updateCard);
 
     auto *hint = makeLabel(
         QStringLiteral("发现新版本后会自动下载、校验，然后替换文件并重新启动程序。"),
@@ -81,44 +107,31 @@ UpdatePage::UpdatePage(QWidget *parent) : QWidget(parent)
     hint2->setWordWrap(true);
     hint2->setMinimumWidth(320);
 
-    auto *checkButton = new PillButton(QStringLiteral("检查更新"), PillButton::Primary, updateCard);
-    checkButton->setLeadingIcon(Icon::Refresh, 15);
-    connect(checkButton, &QPushButton::clicked, this, &UpdatePage::checkUpdateRequested);
-
-    auto *buttonRow = new QHBoxLayout;
-    buttonRow->setContentsMargins(0, 0, 0, 0);
-    buttonRow->setSpacing(9);
-    buttonRow->addWidget(checkButton);
-    buttonRow->addStretch();
-
     auto *updateLayout = new QVBoxLayout(updateCard);
-    updateLayout->setContentsMargins(22, 20, 22, 20);
-    updateLayout->setSpacing(12);
+    updateLayout->setContentsMargins(24, 22, 24, 20);
+    updateLayout->setSpacing(10);
     updateLayout->addLayout(header);
-    updateLayout->addSpacing(2);
+    updateLayout->addSpacing(4);
+    updateLayout->addWidget(divider);
+    updateLayout->addSpacing(4);
+    updateLayout->addWidget(section);
     updateLayout->addWidget(hint);
     updateLayout->addWidget(hint2);
-    updateLayout->addSpacing(2);
-    updateLayout->addLayout(buttonRow);
     updateLayout->addStretch();
 
     // ---- 右：关于 ----
     auto *aboutCard = new Card(this);
     auto *aboutTitle = makeLabel(QStringLiteral("关于"), "sectionTitle", aboutCard);
 
-    m_homeLink = makeLabel(
-        QStringLiteral("<a href=\"https://www.boshou.me\">www.boshou.me</a>"),
-        "aboutValue", aboutCard);
+    auto *aboutDivider = new QFrame(aboutCard);
+    aboutDivider->setObjectName(QStringLiteral("UpdateDivider"));
+    aboutDivider->setFixedHeight(1);
+
+    m_homeLink = makeLabel(QString(), "aboutValue", aboutCard);
     m_homeLink->setTextFormat(Qt::RichText);
     m_homeLink->setOpenExternalLinks(true);
     m_homeLink->setTextInteractionFlags(Qt::TextBrowserInteraction);
-    // 富文本里的链接颜色走 QPalette::Link，QSS 的 color 管不到。
-    {
-        QPalette palette = m_homeLink->palette();
-        palette.setColor(QPalette::Link, Theme::color(QStringLiteral("accent-text")));
-        palette.setColor(QPalette::LinkVisited, Theme::color(QStringLiteral("accent-text")));
-        m_homeLink->setPalette(palette);
-    }
+    updateHomeLink();
 
     auto *form = new QFormLayout;
     form->setContentsMargins(0, 0, 0, 0);
@@ -133,9 +146,10 @@ UpdatePage::UpdatePage(QWidget *parent) : QWidget(parent)
                  makeLabel(QStringLiteral("10220739"), "aboutValue", aboutCard));
 
     auto *aboutLayout = new QVBoxLayout(aboutCard);
-    aboutLayout->setContentsMargins(22, 20, 22, 20);
+    aboutLayout->setContentsMargins(24, 22, 24, 20);
     aboutLayout->setSpacing(14);
     aboutLayout->addWidget(aboutTitle);
+    aboutLayout->addWidget(aboutDivider);
     aboutLayout->addLayout(form);
     aboutLayout->addStretch();
 
@@ -173,14 +187,23 @@ UpdatePage::UpdatePage(QWidget *parent) : QWidget(parent)
 }
 
 
+void UpdatePage::updateHomeLink()
+{
+    if (!m_homeLink)
+        return;
+
+    // 颜色写进锚点的内联样式：QPalette::Link 会被 QSS 的 polish 覆盖掉，
+    // 切配色时这里也会重新生成一次。
+    m_homeLink->setText(
+        QStringLiteral("<a href=\"https://www.boshou.me\" style=\"color:%1;\">"
+                       "www.boshou.me</a>")
+            .arg(Theme::color(QStringLiteral("accent-text")).name()));
+}
+
 void UpdatePage::changeEvent(QEvent *event)
 {
-    if (event->type() == QEvent::ThemeChange && m_homeLink) {
-        QPalette palette = m_homeLink->palette();
-        palette.setColor(QPalette::Link, Theme::color(QStringLiteral("accent-text")));
-        palette.setColor(QPalette::LinkVisited, Theme::color(QStringLiteral("accent-text")));
-        m_homeLink->setPalette(palette);
-    }
+    if (event->type() == QEvent::ThemeChange)
+        updateHomeLink();
     QWidget::changeEvent(event);
 }
 

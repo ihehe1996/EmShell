@@ -8,6 +8,7 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QFileInfo>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPalette>
@@ -42,15 +43,16 @@ QString formatBytes(qint64 bytes)
 UpdateDialog::UpdateDialog(QWidget *parent) : QDialog(parent)
 {
     setWindowTitle(QStringLiteral("软件更新"));
-    setMinimumWidth(560);
+    setMinimumWidth(600);
 
     m_headline = makeLabel(QString(), "dialogHeadline", this);
+    m_headline->setObjectName(QStringLiteral("UpdateHeadline"));
 
     // 标题左边带一下应用图标，看起来才像「EmShell 的更新」，而不是一个
     // 凭空冒出来的系统对话框。
     auto *mark = new QLabel(this);
-    mark->setFixedSize(28, 28);
-    mark->setPixmap(windowIcon().pixmap(28, 28));
+    mark->setFixedSize(40, 40);
+    mark->setPixmap(windowIcon().pixmap(40, 40));
 
     m_detail = makeLabel(QString(), "dialogDetail", this);
     m_detail->setWordWrap(true);
@@ -72,6 +74,14 @@ UpdateDialog::UpdateDialog(QWidget *parent) : QDialog(parent)
         palette.setColor(QPalette::Link, Theme::color(QStringLiteral("accent-text")));
         m_notes->setPalette(palette);
     }
+
+    // 正文外面套一个容器，状态切换时整块收起，免得留下一截空白。
+    // 不要在外面再加「更新内容」之类的标题 —— release 正文自己通常就有
+    // markdown 标题，两层叠在一起很难看。
+    m_notesBox = new QWidget(this);
+    auto *notesLayout = new QVBoxLayout(m_notesBox);
+    notesLayout->setContentsMargins(0, 0, 0, 0);
+    notesLayout->addWidget(m_notes, 1);
 
     m_progress = new QProgressBar(this);
     m_progress->setTextVisible(false);   // QSS 里只有 6px 高，条内文字放不下
@@ -114,20 +124,39 @@ UpdateDialog::UpdateDialog(QWidget *parent) : QDialog(parent)
     buttons->addWidget(m_close);
     buttons->addWidget(m_primary);
 
+    auto *titleCol = new QVBoxLayout;
+    titleCol->setContentsMargins(0, 0, 0, 0);
+    titleCol->setSpacing(5);
+    titleCol->addWidget(m_headline);
+    titleCol->addWidget(m_detail);
+
     auto *header = new QHBoxLayout;
     header->setContentsMargins(0, 0, 0, 0);
-    header->setSpacing(10);
+    header->setSpacing(14);
     header->addWidget(mark, 0, Qt::AlignTop);
-    header->addWidget(m_headline, 1);
+    header->addLayout(titleCol, 1);
+
+    // 进度条和字节数放一行：条占满剩余宽度，数字固定在右边，
+    // 比原来「条一行、数字再一行」紧凑。
+    auto *progressRow = new QHBoxLayout;
+    progressRow->setContentsMargins(0, 0, 0, 0);
+    progressRow->setSpacing(12);
+    progressRow->addWidget(m_progress, 1);
+    m_progressText->setMinimumWidth(130);
+    m_progressText->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    progressRow->addWidget(m_progressText, 0);
+
+    auto *footerLine = new QFrame(this);
+    footerLine->setObjectName(QStringLiteral("UpdateFooterLine"));
+    footerLine->setFixedHeight(1);
 
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(22, 20, 22, 18);
-    layout->setSpacing(12);
+    layout->setContentsMargins(24, 22, 24, 18);
+    layout->setSpacing(14);
     layout->addLayout(header);
-    layout->addWidget(m_detail);
-    layout->addWidget(m_notes, 1);
-    layout->addWidget(m_progress);
-    layout->addWidget(m_progressText);
+    layout->addWidget(m_notesBox, 1);
+    layout->addLayout(progressRow);
+    layout->addWidget(footerLine);
     layout->addLayout(buttons);
 
     m_checker = new UpdateChecker(this);
@@ -170,7 +199,7 @@ void UpdateDialog::applyState(State state)
 
     // 每换一次状态就先全部收起来，下面按状态挑着打开 —— 比逐个 toggle 好读，
     // 也不会漏掉某个控件忘了隐藏
-    m_notes->hide();
+    m_notesBox->hide();
     m_progress->hide();
     m_progressText->hide();
     m_primary->hide();
@@ -219,8 +248,8 @@ void UpdateDialog::applyState(State state)
 
             // QTextBrowser 的 sizeHint 很高，只有几行说明时会空出一大块。
             // 固定成一个紧凑的高度，内容多了它自己出滚动条。
-            m_notes->setFixedHeight(170);
-            m_notes->show();
+            m_notes->setFixedHeight(180);
+            m_notesBox->show();
         }
 
         if (m_asset) {

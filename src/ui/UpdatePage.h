@@ -27,6 +27,8 @@ protected:
     void changeEvent(QEvent *event) override;
 
 private:
+    void updateHomeLink();
+
     QLabel *m_homeLink = nullptr;
 };
 
