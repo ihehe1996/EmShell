@@ -528,7 +528,7 @@ QTextEdit:focus { border-color: @accent; }
 /* 「基本设置 / 外观设置」。容器是一块比页面底色深一点的圆角槽，
    选中项是浮在槽里的浅色块。不要用 QTabWidget —— 那套页签的尺寸和
    内边距在深色主题下很难和侧栏对齐。 */
-#SettingsTabs {
+#SettingsTabs, #ProtocolTabs {
     background: @bg-active;
     border: 1px solid @border;
     border-radius: 10px;

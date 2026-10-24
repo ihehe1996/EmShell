@@ -73,6 +73,9 @@ qt_add_executable(EmShell WIN32
     src/ssh/SshSession.h
     src/ssh/SshSession.cpp
 
+    src/rdp/RdpLauncher.h
+    src/rdp/RdpLauncher.cpp
+
     src/update/Version.h
     src/update/ReleaseInfo.h
     src/update/ReleaseInfo.cpp

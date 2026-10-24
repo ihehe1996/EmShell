@@ -40,6 +40,10 @@ public:
     // main() 用 QTimer 延迟调它，所以必须是 public。
     void startSilentUpdateCheck();
 
+    // 打开一条保存过的连接。SSH 会切到终端页开标签；RDP 是外部 mstsc 窗口，
+    // 不建标签、也不切页。自检也走这一条真实路径。
+    void openConnection(const Connection &connection);
+
 protected:
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
     void changeEvent(QEvent *event) override;
@@ -65,7 +69,6 @@ private:
 
     // 手动检查：打开对话框让它自己查
     void checkForUpdates();
-    void openConnection(const Connection &connection);
     void newConnection();
     void editConnection(const QString &id);
 

@@ -19,6 +19,7 @@
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QScreen>
+#include <QStringList>
 #include <QVBoxLayout>
 #include <QWindow>
 
@@ -233,6 +234,7 @@ ConnectionDialog::ConnectionDialog(ConnectionStore *store, KeyStore *keys, QWidg
 
         auto *label = makeLabel(text, "railBullet", row);
         label->setWordWrap(true);
+        m_railBullets << label;
 
         h->addWidget(dotWrap, 0, Qt::AlignTop);
         h->addWidget(label, 1);
@@ -283,8 +285,53 @@ ConnectionDialog::ConnectionDialog(ConnectionStore *store, KeyStore *keys, QWidg
     auto *topLayout = new QHBoxLayout(topBar);
     topLayout->setContentsMargins(24, 12, 16, 0);
     topLayout->setSpacing(0);
-    topLayout->addWidget(makeLabel(QStringLiteral("连接配置"), "paneTitle", topBar));
+
+    // 窗口最上面的连接类型选项卡。复用设置页那套 segment 样式（两个可勾选
+    // 按钮 + QSS），不单独造一套页签。
+    auto *protocolTabs = new QWidget(topBar);
+    protocolTabs->setObjectName(QStringLiteral("ProtocolTabs"));
+    protocolTabs->setAttribute(Qt::WA_StyledBackground, true);
+    auto *protocolLayout = new QHBoxLayout(protocolTabs);
+    protocolLayout->setContentsMargins(3, 3, 3, 3);
+    protocolLayout->setSpacing(3);
+
+    const auto makeProtocolTab = [&](const QString &text, const QString &name) {
+        auto *button = new QPushButton(text, protocolTabs);
+        button->setObjectName(name);
+        button->setProperty("role", QStringLiteral("segment"));
+        button->setCheckable(true);
+        button->setCursor(Qt::PointingHandCursor);
+        return button;
+    };
+    m_sshTab = makeProtocolTab(QStringLiteral("SSH连接(Linux)"),
+                               QStringLiteral("ProtocolSshTab"));
+    m_rdpTab = makeProtocolTab(QStringLiteral("远程桌面连接(Windows)"),
+                               QStringLiteral("ProtocolRdpTab"));
+    m_sshTab->setChecked(true);
+    protocolLayout->addWidget(m_sshTab);
+    protocolLayout->addWidget(m_rdpTab);
+    topLayout->addWidget(protocolTabs);
     topLayout->addStretch();
+
+    // setCheckable 的按钮点自己会取消勾选，这里手动把互斥状态钉住
+    connect(m_sshTab, &QPushButton::clicked, this, [this] {
+        m_form->setProtocol(Protocol::Ssh);
+        m_sshTab->setChecked(true);
+        m_rdpTab->setChecked(false);
+    });
+    connect(m_rdpTab, &QPushButton::clicked, this, [this] {
+        m_form->setProtocol(Protocol::Rdp);
+        m_sshTab->setChecked(false);
+        m_rdpTab->setChecked(true);
+    });
+
+    // 表单预填（编辑已有连接）时协议是代码设的，选项卡要跟着走
+    connect(m_form, &ConnectionFormPanel::protocolChanged, this, [this](Protocol protocol) {
+        const bool ssh = (protocol == Protocol::Ssh);
+        m_sshTab->setChecked(ssh);
+        m_rdpTab->setChecked(!ssh);
+        updateRailForProtocol(protocol);
+    });
 
     auto *closeButton = new QPushButton(topBar);
     closeButton->setProperty("role", "icon");
@@ -376,6 +423,40 @@ void ConnectionDialog::setHeader(const QString &title, const QString &text)
 {
     m_railTitle->setText(title);
     m_railText->setText(text);
+}
+
+// 左栏是 SSH 还是 RDP，说的完全是两件事：端口、认证方式、打开方式都不一样。
+// 切换类型时整块换掉，别让 RDP 对话框左边还写着「默认 SSH 端口为 22」。
+void ConnectionDialog::updateRailForProtocol(Protocol protocol)
+{
+    const bool rdp = (protocol == Protocol::Rdp);
+
+    if (m_editing) {
+        m_railTitle->setText(QStringLiteral("编辑连接"));
+        m_railText->setText(QStringLiteral("修改这条连接的信息，\n保存后立即生效。"));
+        // 编辑时的铅笔图标由 ConnectionDialog::edit 设好，这里不要覆盖
+    } else {
+        m_railTitle->setText(rdp ? QStringLiteral("新建远程桌面")
+                                 : QStringLiteral("新建连接"));
+        m_railText->setText(
+            rdp ? QStringLiteral("配置远程桌面的连接信息，\n"
+                                 "将调用系统自带的 mstsc 打开。")
+                : QStringLiteral("配置服务器的连接信息，\n支持密码与密钥认证。"));
+        m_railIcon->setPixmap(Icons::pixmap(rdp ? Icon::Monitor : Icon::Server,
+                                            Theme::color(QStringLiteral("nav-cta-bg")),
+                                            kRailIconSize));
+    }
+
+    const QStringList bullets =
+        rdp ? QStringList{QStringLiteral("默认 RDP 端口为 3389"),
+                          QStringLiteral("密码会以明文保存在本机"),
+                          QStringLiteral("支持全屏、多显示器与管理会话")}
+            : QStringList{QStringLiteral("默认 SSH 端口为 22"),
+                          QStringLiteral("生产服务器建议关闭密码登录"),
+                          QStringLiteral("支持分组、标签与备注")};
+
+    for (int i = 0; i < m_railBullets.size() && i < bullets.size(); ++i)
+        m_railBullets.at(i)->setText(bullets.at(i));
 }
 
 void ConnectionDialog::showEvent(QShowEvent *event)
@@ -496,6 +577,7 @@ bool ConnectionDialog::edit(const Connection &existing, ConnectionStore *store, 
                             QWidget *parent, Connection *out)
 {
     ConnectionDialog dialog(store, keys, parent);
+    dialog.m_editing = true;
     dialog.setWindowTitle(QStringLiteral("编辑连接"));
     dialog.setHeader(QStringLiteral("编辑连接"),
                      QStringLiteral("修改这条连接的信息，\n保存后立即生效。"));

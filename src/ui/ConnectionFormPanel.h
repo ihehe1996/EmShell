@@ -46,6 +46,11 @@ public:
     void setSubmitText(const QString &text);
     QString submitText() const;
 
+    // 连接类型。切换时会隐藏 SSH / RDP 各自的字段，并在端口还是另一边的
+    // 默认值（22 / 3389）时顺手换过来 —— 用户自己填过的端口不动。
+    void setProtocol(Protocol protocol);
+    Protocol protocol() const { return m_protocol; }
+
     // 走一遍校验并提交，效果等同于用户点面板自己的主按钮：校验通过就发
     // saved()，失败（比如主机地址为空）只弹提示、不发信号。
     // 弹窗的「创建 / 保存」按钮用它，省得再复制一份校验逻辑。
@@ -77,9 +82,13 @@ signals:
     // 编辑时带着原来的 id，新建时 id 是空的。
     void saved(const Connection &connection);
     void cancelled();
+    // 连接类型变了（用户点选项卡，或者 loadInto 预填了另一类连接）
+    void protocolChanged(Protocol protocol);
 
 private:
     void buildUi();
+    // adjustPort=false 用于预填：文件里存的端口必须原样保留
+    void applyProtocol(Protocol protocol, bool adjustPort);
     void loadInto(const Connection &connection);
     bool commit();
     void onAuthChanged();
@@ -91,6 +100,7 @@ private:
 
     // 编辑时带着原来那条的 id / createdAt，commit 只覆盖表单管得着的字段
     Connection m_result;
+    Protocol m_protocol = Protocol::Ssh;
     bool m_isNew = true;
     QString m_submitOverride;
 
@@ -114,6 +124,13 @@ private:
     QCheckBox *m_savePassword = nullptr;
     QLineEdit *m_tags = nullptr;
     QTextEdit *m_note = nullptr;
+
+    // RDP 模式才显示的字段
+    QWidget *m_authBlock = nullptr;        // 「认证方式」整块，SSH 专用
+    QWidget *m_rdpOptionsBlock = nullptr;  // 全屏 / 多显示器 / 管理会话
+    QCheckBox *m_rdpFullscreen = nullptr;
+    QCheckBox *m_rdpMultiMon = nullptr;
+    QCheckBox *m_rdpAdmin = nullptr;
 
     // 「密码 / 密钥」共用一行：标签在认证方式切换时要改字，字段用栈切换
     QLabel *m_secretLabel = nullptr;

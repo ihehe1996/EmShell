@@ -800,6 +800,8 @@ bool TerminalPage::buildSshOptions(const Connection &connection, SshSession::Opt
 
 void TerminalPage::openConnection(const Connection &connection)
 {
+    // 远程桌面不归这一页管：它不建标签，由 MainWindow 直接交给 RdpLauncher。
+    // 这里只处理会在本页开标签的 SSH。
     SshSession::Options options;
     if (buildSshOptions(connection, &options)) {
         openNativeSsh(connection, options);

@@ -24,6 +24,7 @@ enum class Icon {
     Star,        // 实心，给收藏开关用（亮起来 = 已收藏）
     StarOutline, // 空心星，给侧栏「收藏夹」用
     Terminal,
+    Monitor,   // 远程桌面：一块显示器，和 Terminal 的方框 + 提示符区分开
     Key,
     Settings,
     Search,

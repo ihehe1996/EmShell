@@ -380,6 +380,8 @@ private:
     int m_latencyMs = -1;
 
     QLabel *m_groupDot = nullptr;
+    // RDP 连接在名字前再挂一个显示器小图标；SSH 行不显示（也不占宽）
+    QLabel *m_protocolIcon = nullptr;
     ElidedLabel *m_name = nullptr;
 
     ElidedLabel *m_host = nullptr;

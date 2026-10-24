@@ -24,6 +24,28 @@ AuthType authTypeFromString(const QString &s)
     return AuthType::Password;
 }
 
+QString protocolToString(Protocol p)
+{
+    switch (p) {
+    case Protocol::Ssh: return QStringLiteral("ssh");
+    case Protocol::Rdp: return QStringLiteral("rdp");
+    }
+    return QStringLiteral("ssh");
+}
+
+Protocol protocolFromString(const QString &s)
+{
+    if (s.compare(QLatin1String("rdp"), Qt::CaseInsensitive) == 0)
+        return Protocol::Rdp;
+    // 老配置文件没有这个字段，一律按 SSH 读 —— 那时候也只有 SSH
+    return Protocol::Ssh;
+}
+
+int defaultPortFor(Protocol p)
+{
+    return p == Protocol::Rdp ? 3389 : 22;
+}
+
 ConnectionLink ConnectionLink::fromJson(const QJsonObject &o)
 {
     ConnectionLink link;
@@ -69,9 +91,13 @@ QString Connection::endpoint() const
 
 QString Connection::searchBlob() const
 {
+    // 协议名也进搜索串：搜「远程桌面」或「rdp」时能直接把 RDP 连接捞出来
+    const QString protocolText = protocol == Protocol::Rdp
+                                     ? QStringLiteral("rdp 远程桌面 windows")
+                                     : QStringLiteral("ssh linux");
     return (name + QLatin1Char(' ') + host + QLatin1Char(' ') + username + QLatin1Char(' ')
             + QString::number(port) + QLatin1Char(' ') + note + QLatin1Char(' ')
-            + tags.join(QLatin1Char(' ')))
+            + tags.join(QLatin1Char(' ')) + QLatin1Char(' ') + protocolText)
         .toLower();
 }
 
@@ -81,6 +107,7 @@ QJsonObject Connection::toJson() const
     o[QStringLiteral("id")]           = id;
     o[QStringLiteral("name")]         = name;
     o[QStringLiteral("host")]         = host;
+    o[QStringLiteral("protocol")]     = protocolToString(protocol);
     o[QStringLiteral("port")]         = port;
     o[QStringLiteral("username")]     = username;
     o[QStringLiteral("auth")]         = authTypeToString(auth);
@@ -92,6 +119,9 @@ QJsonObject Connection::toJson() const
     o[QStringLiteral("note")]         = note;
     o[QStringLiteral("favorite")]     = favorite;
     o[QStringLiteral("tags")]         = QJsonArray::fromStringList(tags);
+    o[QStringLiteral("rdpFullscreen")] = rdpFullscreen;
+    o[QStringLiteral("rdpMultiMon")]   = rdpMultiMon;
+    o[QStringLiteral("rdpAdmin")]      = rdpAdmin;
 
     QJsonArray linkArray;
     for (const ConnectionLink &link : links)
@@ -110,7 +140,9 @@ Connection Connection::fromJson(const QJsonObject &o)
     c.id           = o.value(QStringLiteral("id")).toString(c.id);
     c.name         = o.value(QStringLiteral("name")).toString();
     c.host         = o.value(QStringLiteral("host")).toString();
-    c.port         = o.value(QStringLiteral("port")).toInt(22);
+    c.protocol     = protocolFromString(o.value(QStringLiteral("protocol")).toString());
+    // 没写端口就按协议给默认值：老文件全是 SSH，新写的 RDP 记录一定有 3389
+    c.port         = o.value(QStringLiteral("port")).toInt(defaultPortFor(c.protocol));
     c.username     = o.value(QStringLiteral("username")).toString();
     c.auth         = authTypeFromString(o.value(QStringLiteral("auth")).toString());
     c.savePassword = o.value(QStringLiteral("savePassword")).toBool(true);
@@ -123,6 +155,9 @@ Connection Connection::fromJson(const QJsonObject &o)
     c.groupId      = o.value(QStringLiteral("groupId")).toString();
     c.note         = o.value(QStringLiteral("note")).toString();
     c.favorite     = o.value(QStringLiteral("favorite")).toBool(false);
+    c.rdpFullscreen = o.value(QStringLiteral("rdpFullscreen")).toBool(false);
+    c.rdpMultiMon   = o.value(QStringLiteral("rdpMultiMon")).toBool(false);
+    c.rdpAdmin      = o.value(QStringLiteral("rdpAdmin")).toBool(false);
     for (const QJsonValue &v : o.value(QStringLiteral("tags")).toArray())
         c.tags << v.toString();
     for (const QJsonValue &v : o.value(QStringLiteral("links")).toArray()) {

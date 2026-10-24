@@ -5,6 +5,7 @@
 #include "model/ConfigTransfer.h"
 #include "model/ConnectionStore.h"
 #include "model/KeyStore.h"
+#include "rdp/RdpLauncher.h"
 #include "ssh/SshSession.h"
 #include "terminal/LocalSession.h"
 #include "terminal/TerminalScreen.h"
@@ -23,6 +24,7 @@
 
 #include <QApplication>
 #include <QDateTime>
+#include <QJsonObject>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -40,7 +42,14 @@
 #include <QTextStream>
 #include <QTimer>
 
+#include <iterator>
 #include <utility>
+
+#ifndef WIN32_LEAN_AND_MEAN
+#  define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <dpapi.h>
 
 namespace Em {
 
@@ -785,6 +794,210 @@ int runUiSshTest(const QStringList &arguments)
 }
 
 // ---------------------------------------------------------------------------
+// 走完整界面路径的远程桌面测试：真的拉起 mstsc，隔一会儿把整个屏幕抓下来。
+//   --rdpgui 用户@主机 [端口]
+// 密码从环境变量 EMSHELL_RDP_PASSWORD 读，只活在内存里，不落任何文件。
+//
+// 和 --sshgui 一样，只用于人工 / 自检确认「密码有没有被预填」：
+// 截图里是远端桌面就说明密文有效，停在凭据框就说明密码没被接受。
+// ---------------------------------------------------------------------------
+struct ButtonSearch
+{
+    QString needle;
+    HWND found = nullptr;
+};
+
+BOOL CALLBACK findButtonProc(HWND hwnd, LPARAM lParam)
+{
+    auto *search = reinterpret_cast<ButtonSearch *>(lParam);
+
+    wchar_t className[64] = {};
+    GetClassNameW(hwnd, className, int(std::size(className)));
+    if (QString::fromWCharArray(className).compare(QLatin1String("Button"),
+                                                   Qt::CaseInsensitive) != 0)
+        return TRUE;
+
+    wchar_t text[128] = {};
+    GetWindowTextW(hwnd, text, int(std::size(text)));
+    if (QString::fromWCharArray(text).contains(search->needle)) {
+        search->found = hwnd;
+        return FALSE;   // 找到了就停
+    }
+    return TRUE;
+}
+
+bool clickDialogButton(HWND dialog, const QString &needle)
+{
+    ButtonSearch search{needle, nullptr};
+    EnumChildWindows(dialog, findButtonProc, reinterpret_cast<LPARAM>(&search));
+    if (!search.found)
+        return false;
+    SendMessageW(search.found, BM_CLICK, 0, 0);
+    return true;
+}
+
+BOOL CALLBACK collectWindowTitles(HWND hwnd, LPARAM lParam)
+{
+    if (!IsWindowVisible(hwnd))
+        return TRUE;
+
+    wchar_t buffer[256] = {};
+    GetWindowTextW(hwnd, buffer, int(std::size(buffer)));
+    const QString title = QString::fromWCharArray(buffer).trimmed();
+    if (!title.isEmpty())
+        *reinterpret_cast<QStringList *>(lParam) << title;
+    return TRUE;
+}
+
+int runUiRdpTest(const QStringList &arguments)
+{
+    QFile::remove(QStringLiteral("selftest.log"));
+    log(QStringLiteral("== 界面路径远程桌面自检 =="));
+
+    const int flagIndex = arguments.indexOf(QStringLiteral("--rdpgui"));
+    if (flagIndex < 0 || flagIndex + 1 >= arguments.size()) {
+        log(QStringLiteral("  用法：EmShell.exe --rdpgui 用户@主机 [端口]"));
+        flushLog();
+        return 2;
+    }
+
+    const QString target = arguments.at(flagIndex + 1);
+    const int port = (flagIndex + 2 < arguments.size()) ? arguments.at(flagIndex + 2).toInt() : 3389;
+    const QString password = QString::fromUtf8(qgetenv("EMSHELL_RDP_PASSWORD"));
+
+    Connection connection;
+    const int at = target.indexOf(QLatin1Char('@'));
+    connection.username = at > 0 ? target.left(at) : QString();
+    connection.host = at > 0 ? target.mid(at + 1) : target;
+    connection.port = port;
+    connection.protocol = Protocol::Rdp;
+    connection.name = QStringLiteral("自检 %1").arg(connection.host);
+    connection.password = password;
+    connection.savePassword = false;
+
+    log(QStringLiteral("  目标：%1:%2").arg(connection.host).arg(connection.port));
+    log(QStringLiteral("  密码：%1").arg(password.isEmpty()
+                                            ? QStringLiteral("（环境变量里没给，mstsc 会弹框）")
+                                            : QStringLiteral("已从环境变量读入")));
+
+    // 不碰用户真正的配置文件：临时目录里的空 Store 就够了
+    QTemporaryDir tempDir;
+    ConnectionStore store(tempDir.filePath(QStringLiteral("connections.json")));
+    KeyStore keys(tempDir.filePath(QStringLiteral("keys.json")));
+    store.load();
+    keys.load();
+
+    MainWindow window(&store, &keys);
+    window.resize(1280, 800);
+    window.show();
+
+    // RDP 走 MainWindow::openConnection：不建标签、不切页，直接拉起 mstsc
+    QTimer::singleShot(700, &window, [&window, connection] {
+        window.openConnection(connection);
+    });
+
+    // 测试服务器一般是自签名证书，mstsc 会先弹一张「安全警告」。
+    // **只有显式设了 EMSHELL_RDP_ACCEPT_CERT 才替它点「连接」** ——
+    // 默认不自动接受未知证书，那应该由用户自己判断。
+    QTimer certTimer;
+    if (qEnvironmentVariableIsSet("EMSHELL_RDP_ACCEPT_CERT")) {
+        certTimer.setInterval(700);
+        bool accepted = false;
+        QObject::connect(&certTimer, &QTimer::timeout, [&certTimer, &accepted] {
+            if (accepted)
+                return;
+            HWND warning = FindWindowW(nullptr, L"远程桌面连接安全警告");
+            if (!warning)
+                warning = FindWindowW(nullptr, L"Remote Desktop Connection security warning");
+            if (!warning)
+                return;
+            if (clickDialogButton(warning, QStringLiteral("连接"))
+                || clickDialogButton(warning, QStringLiteral("Connect"))) {
+                accepted = true;
+                log(QStringLiteral("  -> 已确认安全警告（测试模式）"));
+                certTimer.stop();
+            }
+        });
+        certTimer.start();
+    }
+
+    QTimer::singleShot(18000, &window, [&window] {
+        // mstsc 的远程桌面窗口类名是 TscShellContainerClass
+        const HWND rdpWindow = FindWindowW(L"TscShellContainerClass", nullptr);
+        if (rdpWindow) {
+            wchar_t title[256] = {};
+            GetWindowTextW(rdpWindow, title, int(std::size(title)));
+            RECT r{};
+            GetWindowRect(rdpWindow, &r);
+            log(QStringLiteral("  mstsc 窗口：\"%1\"  %2,%3 %4x%5")
+                    .arg(QString::fromWCharArray(title))
+                    .arg(r.left).arg(r.top)
+                    .arg(r.right - r.left).arg(r.bottom - r.top));
+        } else {
+            log(QStringLiteral("  mstsc 窗口：没找到（可能停在凭据框，或者根本没起来）"));
+        }
+
+        QStringList titles;
+        EnumWindows(collectWindowTitles, reinterpret_cast<LPARAM>(&titles));
+        log(QStringLiteral("  可见顶层窗口："));
+        for (const QString &title : titles)
+            log(QStringLiteral("    | %1").arg(title));
+
+        // RDP 不应该在终端页留下标签：这是这次改动的核心
+        auto *terminal = window.findChild<TerminalPage *>();
+        const int tabCount = terminal ? terminal->tabCount() : -1;
+        log(QStringLiteral("  终端标签数：%1").arg(tabCount));
+        check(tabCount == 0, QStringLiteral("RDP 不会在终端页建标签"));
+
+        // 整个屏幕抓下来：RDP 画面或凭据框都在上面，比抓 EmShell 窗口有用
+        const QList<QScreen *> screens = QGuiApplication::screens();
+        for (int i = 0; i < screens.size(); ++i) {
+            const QPixmap shot = screens.at(i)->grabWindow(0);
+            const QString file = QStringLiteral("rdpgui_screen%1.png").arg(i + 1);
+            if (!shot.isNull() && shot.save(file))
+                log(QStringLiteral("  已保存 %1（%2x%3）").arg(file)
+                        .arg(shot.width()).arg(shot.height()));
+        }
+        if (window.grab().save(QStringLiteral("rdpgui.png")))
+            log(QStringLiteral("  已保存 rdpgui.png"));
+
+        // mstsc 是 detached 的，退出 EmShell 不会带走它；这里替测试把它关掉。
+        // 先礼后兵：WM_CLOSE 走正常断开流程，赖着不走才 TerminateProcess。
+        if (rdpWindow) {
+            DWORD pid = 0;
+            GetWindowThreadProcessId(rdpWindow, &pid);
+            PostMessageW(rdpWindow, WM_CLOSE, 0, 0);
+            log(QStringLiteral("  -> 已请求关闭 mstsc（pid %1）").arg(pid));
+            QTimer::singleShot(2000, &window, [pid] {
+                if (FindWindowW(L"TscShellContainerClass", nullptr)) {
+                    HANDLE process = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+                    if (process) {
+                        TerminateProcess(process, 0);
+                        CloseHandle(process);
+                    }
+                    QTimer::singleShot(800, [] {
+                        check(FindWindowW(L"TscShellContainerClass", nullptr) == nullptr,
+                              QStringLiteral("测试结束后 mstsc 已退出"));
+                        qApp->quit();
+                    });
+                } else {
+                    check(true, QStringLiteral("测试结束后 mstsc 已退出"));
+                    qApp->quit();
+                }
+            });
+        } else {
+            qApp->quit();
+        }
+    });
+
+    QTimer::singleShot(25000, [] { qApp->quit(); });
+    qApp->exec();
+
+    flushLog();
+    return g_fail == 0 ? 0 : 1;
+}
+
+// ---------------------------------------------------------------------------
 // 逐页截图：按侧边栏的顺序把每个页面切一遍，各存一张 PNG。
 // 做界面的时候用，比一页页手动点开看快。
 //   --uishots [宽 高]
@@ -906,6 +1119,19 @@ int runConnectionDialogShot()
             }
             if (modal->grab().save(QStringLiteral("connectiondialog.png")))
                 log(QStringLiteral("  已保存 connectiondialog.png"));
+
+            // 再切到远程桌面，确认选项卡换页和左栏文案
+            if (auto *rdpTab = modal->findChild<QPushButton *>(QStringLiteral("ProtocolRdpTab"))) {
+                rdpTab->click();
+                QTimer::singleShot(300, modal, [modal] {
+                    if (modal->grab().save(QStringLiteral("connectiondialog_rdp.png")))
+                        log(QStringLiteral("  已保存 connectiondialog_rdp.png"));
+                    if (auto *dialog = qobject_cast<QDialog *>(modal))
+                        dialog->reject();
+                });
+                return;
+            }
+
             if (auto *dialog = qobject_cast<QDialog *>(modal))
                 dialog->reject();
         });
@@ -1252,6 +1478,138 @@ int runTransferTest()
 
     QFile::remove(exportPath);
     QFile::remove(bogusPath);
+
+    flushLog();
+    return g_fail == 0 ? 0 : 1;
+}
+
+// ---------------------------------------------------------------------------
+// 远程桌面自检：连接记录的协议字段 + .rdp 内容 + DPAPI 密码密文。
+//   --rdptest
+//
+// **不会真的拉起 mstsc** —— 那会弹一个远程桌面窗口，自检没法无人值守。
+// 真正启动那一步只能手动点一次确认。
+// ---------------------------------------------------------------------------
+int runRdpTest()
+{
+    QFile::remove(QStringLiteral("selftest.log"));
+    log(QStringLiteral("== 远程桌面自检 =="));
+
+    // ---- 协议字段的 JSON 往返 ----
+    {
+        Connection rdp = Connection::create(QStringLiteral("win-box"),
+                                            QStringLiteral("192.168.1.10"),
+                                            QStringLiteral("DOMAIN\\user"));
+        rdp.protocol = Protocol::Rdp;
+        rdp.port = 3389;
+        rdp.password = QStringLiteral("P@ssw0rd");
+        rdp.rdpFullscreen = true;
+        rdp.rdpMultiMon = true;
+        rdp.rdpAdmin = true;
+
+        const Connection back = Connection::fromJson(rdp.toJson());
+        check(back.protocol == Protocol::Rdp && back.port == 3389
+                  && back.rdpFullscreen && back.rdpMultiMon && back.rdpAdmin,
+              QStringLiteral("RDP 协议和桌面选项能往返 JSON"));
+
+        // 老文件没有 protocol / port：一律按 SSH、22 读
+        const QJsonObject legacy{{QStringLiteral("host"), QStringLiteral("10.0.0.1")},
+                                 {QStringLiteral("username"), QStringLiteral("root")}};
+        const Connection old = Connection::fromJson(legacy);
+        check(old.protocol == Protocol::Ssh && old.port == 22,
+              QStringLiteral("老配置（无 protocol）按 SSH / 22 读"),
+              QStringLiteral("protocol=%1 port=%2")
+                  .arg(protocolToString(old.protocol)).arg(old.port));
+
+        // RDP 记录没写端口时，默认值应该是 3389 而不是 22
+        const QJsonObject rdpNoPort{{QStringLiteral("host"), QStringLiteral("10.0.0.2")},
+                                    {QStringLiteral("protocol"), QStringLiteral("rdp")}};
+        check(Connection::fromJson(rdpNoPort).port == 3389,
+              QStringLiteral("RDP 记录缺端口时默认 3389"));
+    }
+
+    // ---- DPAPI 密码密文 ----
+    {
+        const QString password = QStringLiteral("P@ssw0rd-中文");
+        QString hex;
+        QString error;
+        check(RdpLauncher::protectPassword(password, &hex, &error),
+              QStringLiteral("DPAPI 能加密 RDP 密码"), error);
+        check(!hex.isEmpty() && hex == hex.toUpper(),
+              QStringLiteral("密文是非空的十六进制"), QStringLiteral("长度 %1").arg(hex.size()));
+
+        // 解回来必须和原文一致。顺带验证了「明文按 UTF-16LE 送进去」这条 ——
+        // 用 UTF-8 的话这里解出来会是乱码，mstsc 也就认不出密码。
+        const QByteArray blob = QByteArray::fromHex(hex.toLatin1());
+        DATA_BLOB in{};
+        in.pbData = reinterpret_cast<BYTE *>(const_cast<char *>(blob.constData()));
+        in.cbData = DWORD(blob.size());
+        DATA_BLOB out{};
+        const BOOL ok = CryptUnprotectData(&in, nullptr, nullptr, nullptr, nullptr,
+                                           CRYPTPROTECT_UI_FORBIDDEN, &out);
+        QString plain;
+        if (ok) {
+            plain = QString::fromUtf16(reinterpret_cast<const char16_t *>(out.pbData),
+                                       out.cbData / 2);
+            LocalFree(out.pbData);
+        }
+        check(ok && plain == password,
+              QStringLiteral("密文按 UTF-16LE 解回原文"),
+              ok ? QStringLiteral("解出 %1 个字符").arg(plain.size())
+                 : QStringLiteral("CryptUnprotectData 失败，错误码 %1").arg(GetLastError()));
+    }
+
+    // ---- 生成的 .rdp 内容 ----
+    {
+        Connection rdp = Connection::create(QStringLiteral("win-box"),
+                                            QStringLiteral("192.168.1.10"),
+                                            QStringLiteral("DOMAIN\\user"));
+        rdp.protocol = Protocol::Rdp;
+        rdp.port = 3399;
+        rdp.rdpFullscreen = true;
+        rdp.rdpMultiMon = true;
+        rdp.rdpAdmin = true;
+
+        const QString content =
+            RdpLauncher::buildRdpFileContent(rdp, QStringLiteral("AABBCC"));
+
+        check(content.contains(QStringLiteral("full address:s:192.168.1.10:3399")),
+              QStringLiteral(".rdp 里是 host:port"));
+        check(content.contains(QStringLiteral("username:s:DOMAIN\\user")),
+              QStringLiteral(".rdp 里带用户名"));
+        check(content.contains(QStringLiteral("password 51:b:AABBCC")),
+              QStringLiteral(".rdp 里带 DPAPI 密文"));
+        check(content.contains(QStringLiteral("screen mode id:i:2"))
+                  && content.contains(QStringLiteral("use multimon:i:1"))
+                  && content.contains(QStringLiteral("administrative session:i:1")),
+              QStringLiteral(".rdp 里全屏 / 多显示器 / 管理会话都写进去了"));
+        check(!content.contains(QStringLiteral("desktopwidth")),
+              QStringLiteral("全屏时不写桌面尺寸"));
+
+        // 窗口模式：给默认尺寸，非管理会话不写那条
+        rdp.rdpFullscreen = false;
+        rdp.rdpAdmin = false;
+        const QString windowed = RdpLauncher::buildRdpFileContent(rdp, QString());
+        check(windowed.contains(QStringLiteral("screen mode id:i:1"))
+                  && windowed.contains(QStringLiteral("desktopwidth:i:1600"))
+                  && !windowed.contains(QStringLiteral("administrative session:i:1"))
+                  && !windowed.contains(QStringLiteral("password 51:b:")),
+              QStringLiteral("窗口模式参数正确，没密码时不留 password 行"));
+
+        // IPv6 要加方括号，否则端口会被冒号切错
+        rdp.host = QStringLiteral("fe80::1");
+        const QString v6 = RdpLauncher::buildRdpFileContent(rdp, QString());
+        check(v6.contains(QStringLiteral("full address:s:[fe80::1]:3399")),
+              QStringLiteral("IPv6 地址加方括号"));
+
+        // 用户名里的换行不能把 INI 结构拆坏
+        rdp.host = QStringLiteral("10.0.0.3");
+        rdp.username = QStringLiteral("DOM\r\nAIN\\user");
+        const QString sanitized = RdpLauncher::buildRdpFileContent(rdp, QString());
+        check(!sanitized.contains(QStringLiteral("DOM\r\nAIN"))
+                  && sanitized.contains(QStringLiteral("username:s:DOMAIN\\user")),
+              QStringLiteral("用户名里的换行被清掉"));
+    }
 
     flushLog();
     return g_fail == 0 ? 0 : 1;
@@ -1888,6 +2246,7 @@ bool isSelfTestRequest(const QStringList &arguments)
     return arguments.contains(QStringLiteral("--selftest"))
            || arguments.contains(QStringLiteral("--updatetest"))
            || arguments.contains(QStringLiteral("--transfertest"))
+           || arguments.contains(QStringLiteral("--rdptest"))
            || arguments.contains(QStringLiteral("--updateui"))
            || arguments.contains(QStringLiteral("--dialogui"))
            || arguments.contains(QStringLiteral("--settingsui"))
@@ -1902,6 +2261,7 @@ bool isSelfTestRequest(const QStringList &arguments)
            || arguments.contains(QStringLiteral("--sshtest"))
            || arguments.contains(QStringLiteral("--sshnative"))
            || arguments.contains(QStringLiteral("--sshgui"))
+           || arguments.contains(QStringLiteral("--rdpgui"))
            || arguments.contains(QStringLiteral("--uishots"))
            || arguments.contains(QStringLiteral("--uidump"));
 }
@@ -1938,10 +2298,14 @@ int runSelfTest(const QStringList &arguments)
         return runUpdateTest();
     if (arguments.contains(QStringLiteral("--transfertest")))
         return runTransferTest();
+    if (arguments.contains(QStringLiteral("--rdptest")))
+        return runRdpTest();
     if (arguments.contains(QStringLiteral("--uishots")))
         return runUiShots(arguments);
     if (arguments.contains(QStringLiteral("--uidump")))
         return runUiDump(arguments);
+    if (arguments.contains(QStringLiteral("--rdpgui")))
+        return runUiRdpTest(arguments);
     if (arguments.contains(QStringLiteral("--sshgui")))
         return runUiSshTest(arguments);
     if (arguments.contains(QStringLiteral("--sshnative")))

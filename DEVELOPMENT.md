@@ -33,6 +33,7 @@ model/      连接、分组、历史、密钥的数据与持久化（JSON + QSet
   ↑
 terminal/   TerminalSession（抽象）→ LocalSession（ConPTY）
 ssh/        TerminalSession（抽象）→ SshSession（libssh2）
+rdp/        RdpLauncher（生成 .rdp + startDetached 拉起 mstsc，不建标签）
 update/     检查 GitHub Release、下载校验、替换文件
   ↑
 ui/         页面与控件，只跟 TerminalSession 打交道
@@ -40,6 +41,7 @@ ui/         页面与控件，只跟 TerminalSession 打交道
 
 - `terminal/TerminalSession.h` 是本地 shell 和 SSH 的共同接口，`TerminalView` 完全不知道底下是什么会话。
 - `TerminalScreen` 是纯逻辑的 VT/xterm 解析器，不依赖 Widget；`feed()` 是增量的，转义序列和 UTF-8 多字节字符被切断在两次调用之间也能接上。
+- `RdpLauncher` 生成临时 `.rdp`（UTF-16LE + BOM，放在随机目录里、以连接名命名）并 `startDetached` 拉起系统 `mstsc`；**不建终端标签、不切页、不跟踪进程**，关掉 EmShell 不会关掉远程桌面。密码写在 `password 51:b:` 里，是 DPAPI（描述 `"psw"`、entropy NULL、明文 UTF-16LE、大写十六进制）现算的密文，只对本机当前账户有效，**不能存进 connections.json**。
 - `SshSession` 跑在独立工作线程：主线程通过待发队列 / 原子变量 / 信号通信；握手和认证用阻塞模式，建好 shell 后切非阻塞 + `select()` 轮询。主机密钥确认需要主线程弹窗时，用「发信号 + 条件变量等」同步一次，**`emit` 必须在锁外**。
 - 列表里的状态和延迟由 `ui/ConnectionProbe` 对 `host:port` 做异步 TCP 探测，最多 6 并发、单个 2.5 秒超时，结果缓存 60 秒。它只代表端口可达，不代表 SSH 认证能通过。
 - 终端的右键菜单在 `TerminalView::contextMenuEvent`，复用已有的 `copySelection()` / `pasteFromClipboard()` / `selectAll()`；快捷键是 Ctrl+Shift+C / Ctrl+V（或 Ctrl+Shift+V）/ Ctrl+Shift+A（Ctrl+C 要留给终端发信号）。
@@ -84,12 +86,14 @@ ui/         页面与控件，只跟 TerminalSession 打交道
 ```bash
 cd build/debug
 
-./EmShell.exe --selftest          # VT 解析器断言，32 项
+./EmShell.exe --selftest          # VT 解析器断言，33 项
 ./EmShell.exe --updatetest        # 更新：版本比较 / release 解析 / 铺暂存目录
+./EmShell.exe --transfertest      # 配置导入导出
+./EmShell.exe --rdptest           # 远程桌面：协议字段 / .rdp 内容 / DPAPI 密码密文
 ./EmShell.exe --updatecheck       # 更新：真联网问一次 GitHub
 ./EmShell.exe --updateui          # 更新对话框截图
 ./EmShell.exe --updatepageui      # 软件更新页截图
-./EmShell.exe --dialogui          # 新建连接对话框截图
+./EmShell.exe --dialogui          # 新建连接对话框截图（SSH / RDP 各一张）
 ./EmShell.exe --settingsui        # 设置页截图
 ./EmShell.exe --probeui           # 连通性检测截图
 ./EmShell.exe --termui            # 终端页截图
@@ -100,6 +104,8 @@ EMSHELL_PTY_SHELL='C:/WINDOWS/system32/cmd.exe' ./EmShell.exe --ptytest   # 指�
 EMSHELL_SSH_PASSWORD='密码' ./EmShell.exe --sshtest  user@host 22
 EMSHELL_SSH_PASSWORD='密码' ./EmShell.exe --sshnative user@host 22
 EMSHELL_SSH_PASSWORD='密码' ./EmShell.exe --sshgui   user@host 22
+EMSHELL_RDP_PASSWORD='密码' ./EmShell.exe --rdpgui  user@host 3389
+EMSHELL_RDP_PASSWORD='密码' EMSHELL_RDP_ACCEPT_CERT=1 ./EmShell.exe --rdpgui user@host 3389
 ```
 
 自更新的「换文件」不开在自检里（会替换本程序），由桩程序单独验：

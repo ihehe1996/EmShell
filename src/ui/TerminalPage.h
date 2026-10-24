@@ -39,8 +39,9 @@ public:
     // 开一个本地 shell
     void openLocalSession(const QString &shell = QString());
 
-    // 连服务器。有可用凭据（存了密码，或指定了密钥）就走原生 SSH；
+    // 连一台 SSH 服务器。有可用凭据（存了密码，或指定了密钥）就走原生 SSH；
     // 没有的话退回系统 ssh 客户端，让用户在终端里自己输密码。
+    // **RDP 不走这里**：它不建标签，由 MainWindow 直接交给 RdpLauncher。
     void openConnection(const Connection &connection);
 
     int tabCount() const { return m_tabs.size(); }

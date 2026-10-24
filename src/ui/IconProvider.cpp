@@ -43,6 +43,9 @@ QString bodyFor(Icon which)
         return QStringLiteral("<path d='m12 3.6 2.6 5.3 5.8.85-4.2 4.1 1 5.8L12 16.9l-5.2 2.75 1-5.8-4.2-4.1 5.8-.85z'/>");
     case Icon::Terminal:
         return QStringLiteral("<rect x='3' y='4.6' width='18' height='14.8' rx='2'/><path d='m7.6 9.6 2.6 2.6-2.6 2.6'/><path d='M13 14.8h3.4'/>");
+    case Icon::Monitor:
+        // 显示器和 Terminal 的方框要分得开：这里下面有底座，屏幕上没有提示符
+        return QStringLiteral("<rect x='3' y='4.6' width='18' height='12.4' rx='1.8'/><path d='M12 17v3.2'/><path d='M8.6 20.2h6.8'/>");
     case Icon::Key:
         return QStringLiteral("<circle cx='8' cy='12' r='3.4'/><path d='m11.4 12 9 0'/><path d='M17.4 12v3.2'/><path d='M20.4 12v2.2'/>");
     case Icon::Settings:

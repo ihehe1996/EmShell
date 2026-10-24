@@ -4,6 +4,7 @@
 #include "app/Theme.h"
 #include "model/ConnectionStore.h"
 #include "model/KeyStore.h"
+#include "rdp/RdpLauncher.h"
 #include "ui/ConnectionsPage.h"
 #include "ui/HistoryPage.h"
 #include "ui/IconProvider.h"
@@ -25,6 +26,7 @@
 #include <QSystemTrayIcon>
 #include <QKeySequence>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPainter>
 #include <QPen>
 #include <QPixmap>
@@ -534,6 +536,23 @@ void MainWindow::handleGroupsChanged()
 
 void MainWindow::openConnection(const Connection &connection)
 {
+    // 远程桌面是外部 mstsc 窗口：不建终端标签，也不切到终端页。
+    // 用户点完连接，看到的就是 mstsc 自己弹出来。
+    if (connection.protocol == Protocol::Rdp) {
+        QString error;
+        QString warning;
+        const bool ok = RdpLauncher::launch(connection, &error, &warning);
+        if (!ok) {
+            QMessageBox::warning(this, QStringLiteral("打不开远程桌面"), error);
+        } else if (!warning.isEmpty()) {
+            QMessageBox::information(this, QStringLiteral("远程桌面"), warning);
+        }
+
+        if (m_store && !connection.id.isEmpty())
+            m_store->recordUse(connection.id, ok);
+        return;
+    }
+
     switchPage(AppPage::Terminal);
     m_terminal->openConnection(connection);
 

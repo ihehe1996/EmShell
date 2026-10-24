@@ -985,6 +985,12 @@ ConnectionRow::ConnectionRow(const Connection &connection, const QString &groupN
     nameLayout->setContentsMargins(0, 0, 0, 0);
     nameLayout->setSpacing(6);
     nameLayout->addWidget(m_groupDot);
+
+    m_protocolIcon = new QLabel(nameColumn);
+    m_protocolIcon->setFixedSize(14, 14);
+    m_protocolIcon->hide();
+    nameLayout->addWidget(m_protocolIcon);
+
     nameLayout->addWidget(m_name, 1);
 
     // 主机 / 端口 / 用户
@@ -1135,6 +1141,14 @@ void ConnectionRow::refresh()
 {
     m_name->setFullText(m_connection.name.isEmpty() ? m_connection.host : m_connection.name);
 
+    // 远程桌面在名字前挂一个显示器图标，和 SSH 行一眼分得开
+    const bool rdp = (m_connection.protocol == Protocol::Rdp);
+    m_protocolIcon->setVisible(rdp);
+    if (rdp) {
+        m_protocolIcon->setPixmap(Icons::pixmap(Icon::Monitor,
+                                                tokenColor("text-mute"), 14));
+    }
+
     m_host->setFullText(m_connection.host);
     m_port->setText(QString::number(m_connection.port));
     m_user->setFullText(m_connection.username.isEmpty() ? QStringLiteral("—")
@@ -1150,8 +1164,11 @@ void ConnectionRow::refresh()
     // 表格里放不下的信息（标签、备注、认证方式）收进 tooltip
     QStringList tip;
     tip << m_connection.identity();
-    tip << (m_connection.auth == AuthType::Password ? QStringLiteral("密码认证")
-                                                    : QStringLiteral("公钥认证"));
+    if (m_connection.protocol == Protocol::Rdp)
+        tip << QStringLiteral("远程桌面");
+    else
+        tip << (m_connection.auth == AuthType::Password ? QStringLiteral("密码认证")
+                                                        : QStringLiteral("公钥认证"));
     if (!m_groupName.isEmpty())
         tip << QStringLiteral("分组：%1").arg(m_groupName);
     if (!m_connection.tags.isEmpty())

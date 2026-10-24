@@ -21,6 +21,19 @@ enum class AuthType {
 QString authTypeToString(AuthType t);
 AuthType authTypeFromString(const QString &s);
 
+// 连接协议。目前两条路：
+//   Ssh —— 走内置 libssh2 / 系统 ssh 客户端，文本终端；
+//   Rdp —— 拉起系统自带的 mstsc，图形桌面在独立窗口里，EmShell 只做启动和状态跟踪。
+enum class Protocol {
+    Ssh = 0,
+    Rdp,
+};
+
+QString protocolToString(Protocol p);
+Protocol protocolFromString(const QString &s);
+// 没填端口时用哪个：SSH 22，RDP 3389
+int defaultPortFor(Protocol p);
+
 // 连接上挂的一条网址。由「管理链接」维护，跟着连接一起落盘。
 struct ConnectionLink
 {
@@ -37,6 +50,7 @@ struct Connection
     QString id;
     QString name;
     QString host;
+    Protocol protocol = Protocol::Ssh;
     int port = 22;
     QString username;
     AuthType auth = AuthType::Password;
@@ -48,6 +62,11 @@ struct Connection
     bool favorite = false;
     QStringList tags;
     QVector<ConnectionLink> links;   // 这台机器相关的网址（后台、文档……）
+
+    // 远程桌面选项（protocol == Rdp 时才有意义）。mstsc 的参数都写进临时 .rdp 文件。
+    bool rdpFullscreen = false;   // 全屏打开（screen mode id:i:2）
+    bool rdpMultiMon = false;     // 多显示器（use multimon:i:1）
+    bool rdpAdmin = false;        // 连接管理会话（administrative session:i:1）
     QDateTime createdAt;
     QDateTime lastUsedAt;
     int useCount = 0;

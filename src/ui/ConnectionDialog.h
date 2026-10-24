@@ -3,9 +3,11 @@
 #include "model/Connection.h"
 
 #include <QDialog>
+#include <QVector>
 
 class QLabel;
 class QMouseEvent;
+class QPushButton;
 class QShowEvent;
 
 namespace Em {
@@ -62,12 +64,22 @@ private:
     ConnectionDialog(ConnectionStore *store, KeyStore *keys, QWidget *parent);
 
     void setHeader(const QString &title, const QString &text);
+    // 切换连接类型时，左栏的标题 / 说明 / 要点和图标要一起换
+    void updateRailForProtocol(Protocol protocol);
 
     ConnectionFormPanel *m_form = nullptr;
     PillButton *m_submit = nullptr;
     QLabel *m_railIcon = nullptr;
     QLabel *m_railTitle = nullptr;
     QLabel *m_railText = nullptr;
+    QVector<QLabel *> m_railBullets;
+
+    // 顶部「SSH连接(Linux) / 远程桌面连接(Windows)」两个选项卡
+    QPushButton *m_sshTab = nullptr;
+    QPushButton *m_rdpTab = nullptr;
+
+    // 编辑已有连接时左栏保持「编辑」语气和铅笔图标，不跟着协议换标题
+    bool m_editing = false;
 
     QWidget *m_overlay = nullptr;
     Connection m_result;

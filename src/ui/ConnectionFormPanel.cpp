@@ -186,12 +186,12 @@ void ConnectionFormPanel::buildUi()
 
     // 用户名和认证方式并排、等宽
     auto *userBlock = makeBlock(formLabel(QStringLiteral("用户名")), m_user);
-    auto *authBlock = makeBlock(formLabel(QStringLiteral("认证方式")), m_auth);
+    m_authBlock = makeBlock(formLabel(QStringLiteral("认证方式")), m_auth);
     auto *userRow = new QHBoxLayout;
     userRow->setContentsMargins(0, 0, 0, 0);
     userRow->setSpacing(12);
     userRow->addWidget(userBlock, 1);
-    userRow->addWidget(authBlock, 1);
+    userRow->addWidget(m_authBlock, 1);
     form->addLayout(userRow);
 
     // 密码 / 密钥共用一行：标签字和右边的小控件跟着认证方式切
@@ -212,6 +212,37 @@ void ConnectionFormPanel::buildUi()
     secretLayout->addWidget(secretLabelRow);
     secretLayout->addWidget(m_secretStack);
     form->addWidget(secretBlock);
+
+    // ---- 远程桌面选项（protocol == Rdp 时才显示）----
+    // 和端口一样，都是写进临时 .rdp 文件的参数；这里只放最常用的三个开关。
+    m_rdpOptionsBlock = new QWidget(this);
+    auto *rdpOptionsLayout = new QVBoxLayout(m_rdpOptionsBlock);
+    rdpOptionsLayout->setContentsMargins(0, 0, 0, 0);
+    rdpOptionsLayout->setSpacing(6);
+
+    auto *rdpLabelRow = new QWidget(m_rdpOptionsBlock);
+    auto *rdpLabelLayout = new QHBoxLayout(rdpLabelRow);
+    rdpLabelLayout->setContentsMargins(0, 0, 0, 0);
+    rdpLabelLayout->setSpacing(0);
+    rdpLabelLayout->addWidget(formLabel(QStringLiteral("桌面选项")));
+    rdpLabelLayout->addStretch();
+
+    auto *rdpChecks = new QHBoxLayout;
+    rdpChecks->setContentsMargins(0, 0, 0, 0);
+    rdpChecks->setSpacing(18);
+    m_rdpFullscreen = new CheckBox(QStringLiteral("全屏"), m_rdpOptionsBlock);
+    m_rdpMultiMon = new CheckBox(QStringLiteral("多显示器"), m_rdpOptionsBlock);
+    m_rdpAdmin = new CheckBox(QStringLiteral("管理会话"), m_rdpOptionsBlock);
+    m_rdpMultiMon->setToolTip(QStringLiteral("在全部显示器上铺满（需要全屏）"));
+    m_rdpAdmin->setToolTip(QStringLiteral("连接控制台管理会话，相当于 mstsc /admin"));
+    rdpChecks->addWidget(m_rdpFullscreen);
+    rdpChecks->addWidget(m_rdpMultiMon);
+    rdpChecks->addWidget(m_rdpAdmin);
+    rdpChecks->addStretch();
+
+    rdpOptionsLayout->addWidget(rdpLabelRow);
+    rdpOptionsLayout->addLayout(rdpChecks);
+    form->addWidget(m_rdpOptionsBlock);
 
     // 「更多信息」：一条细线把可选项和上面的连接 / 认证信息分开
     auto *moreRow = new QWidget(this);
@@ -315,6 +346,7 @@ void ConnectionFormPanel::buildUi()
     const QList<QWidget *> tabOrder = {
         m_name, m_host, m_port, m_user, m_auth,
         m_password, m_savePassword, m_key,
+        m_rdpFullscreen, m_rdpMultiMon, m_rdpAdmin,
         m_group, m_tags, m_note
     };
     for (int i = 0; i + 1 < tabOrder.size(); ++i)
@@ -374,6 +406,41 @@ void ConnectionFormPanel::setSubmitText(const QString &text)
 QString ConnectionFormPanel::submitText() const
 {
     return m_submit->text();
+}
+
+void ConnectionFormPanel::setProtocol(Protocol protocol)
+{
+    applyProtocol(protocol, true);
+}
+
+void ConnectionFormPanel::applyProtocol(Protocol protocol, bool adjustPort)
+{
+    const bool changed = (m_protocol != protocol);
+    m_protocol = protocol;
+
+    // 只在端口还是「另一边的默认值」时才换。用户手填过 2222 / 13389 这种
+    // 就原样留着 —— 切换协议不该把人家改过的端口抹掉。
+    if (adjustPort && changed) {
+        const Protocol other = (protocol == Protocol::Rdp) ? Protocol::Ssh : Protocol::Rdp;
+        if (m_port->value() == defaultPortFor(other))
+            m_port->setValue(defaultPortFor(protocol));
+    }
+
+    const bool ssh = (protocol == Protocol::Ssh);
+    if (m_authBlock)
+        m_authBlock->setVisible(ssh);
+    if (m_rdpOptionsBlock)
+        m_rdpOptionsBlock->setVisible(!ssh);
+    if (m_user) {
+        m_user->setToolTip(ssh ? QString()
+                               : QStringLiteral("支持 域\\用户 或 user@domain"));
+    }
+
+    // RDP 没有「认证方式」可选，强制回到密码页；切回 SSH 时再按下拉框恢复。
+    onAuthChanged();
+
+    if (changed)
+        emit protocolChanged(protocol);
 }
 
 void ConnectionFormPanel::submit()
@@ -457,13 +524,19 @@ void ConnectionFormPanel::refreshKeyList()
 
 void ConnectionFormPanel::loadInto(const Connection &c)
 {
+    // 预填不调整端口：文件里存的是什么就是什么
+    applyProtocol(c.protocol, false);
+
     m_name->setText(c.name);
     m_host->setText(c.host);
-    m_port->setValue(c.port > 0 ? c.port : 22);
+    m_port->setValue(c.port > 0 ? c.port : defaultPortFor(c.protocol));
     m_user->setText(c.username);
     m_auth->setCurrentIndex(c.auth == AuthType::Password ? 0 : 1);
     m_password->setText(c.password);
     m_savePassword->setChecked(c.savePassword);
+    m_rdpFullscreen->setChecked(c.rdpFullscreen);
+    m_rdpMultiMon->setChecked(c.rdpMultiMon);
+    m_rdpAdmin->setChecked(c.rdpAdmin);
     m_tags->setText(c.tags.join(QLatin1Char(' ')));
     m_note->setPlainText(c.note);
 
@@ -480,6 +553,15 @@ void ConnectionFormPanel::onAuthChanged()
 {
     if (!m_auth || !m_secretStack)
         return;
+
+    // RDP 只有密码这一种，认证方式控件本身也是隐藏的
+    if (m_protocol == Protocol::Rdp) {
+        m_secretStack->setCurrentIndex(0);
+        m_secretLabel->setText(QStringLiteral("密码"));
+        m_savePassword->setVisible(true);
+        m_keyHint->setVisible(false);
+        return;
+    }
 
     const bool byPassword = (m_auth->currentIndex() == 0);
 
@@ -511,8 +593,9 @@ bool ConnectionFormPanel::commit()
         return false;
     }
 
+    // RDP 允许不填用户名：mstsc 自己会弹凭据框，或者用当前 Windows 账户
     const QString username = m_user->text().trimmed();
-    if (username.isEmpty()) {
+    if (m_protocol == Protocol::Ssh && username.isEmpty()) {
         QMessageBox::warning(this, QStringLiteral("还差一点"),
                              QStringLiteral("用户名不能为空。"));
         m_user->setFocus();
@@ -521,12 +604,26 @@ bool ConnectionFormPanel::commit()
 
     m_result.name = name.isEmpty() ? host : name;
     m_result.host = host;
+    m_result.protocol = m_protocol;
     m_result.port = m_port->value();
     m_result.username = username;
-    m_result.auth = m_auth->currentIndex() == 0 ? AuthType::Password : AuthType::PublicKey;
     m_result.password = m_password->text();
     m_result.savePassword = m_savePassword->isChecked();
-    m_result.keyId = m_key->currentData().toString();
+    m_result.rdpFullscreen = m_rdpFullscreen->isChecked();
+    m_result.rdpMultiMon = m_rdpMultiMon->isChecked();
+    m_result.rdpAdmin = m_rdpAdmin->isChecked();
+
+    if (m_protocol == Protocol::Rdp) {
+        // RDP 走 mstsc，认证方式 / 密钥这些 SSH 字段不参与，清掉免得下次
+        // 切回 SSH 时带出一条已经没意义的密钥引用
+        m_result.auth = AuthType::Password;
+        m_result.keyId.clear();
+    } else {
+        m_result.auth = m_auth->currentIndex() == 0 ? AuthType::Password
+                                                    : AuthType::PublicKey;
+        m_result.keyId = m_key->currentData().toString();
+    }
+
     m_result.groupId = m_group->currentData().toString();
     m_result.note = m_note->toPlainText().trimmed();
 
