@@ -661,7 +661,8 @@ void MainWindow::showTrayMenu()
     ::AppendMenuW(menu, MF_STRING, kShowCommand, showText.c_str());
     ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     ::AppendMenuW(menu, MF_STRING, kQuitCommand, quitText.c_str());
-    ::SetMenuDefaultItem(menu, kShowCommand, FALSE);
+    // **不要调 SetMenuDefaultItem**：Win32 原生菜单会把默认项画成粗体，
+    // 「显示主窗口」就会比「退出 EmShell」粗一档。这里不需要回车默认项。
 
     POINT pt{};
     ::GetCursorPos(&pt);
