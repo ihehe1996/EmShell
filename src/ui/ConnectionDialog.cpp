@@ -294,15 +294,22 @@ ConnectionDialog::ConnectionDialog(ConnectionStore *store, KeyStore *keys, QWidg
     paneLayout->setSpacing(0);
 
     auto *topBar = new QWidget(pane);
-    auto *topLayout = new QHBoxLayout(topBar);
-    topLayout->setContentsMargins(24, 12, 16, 0);
-    topLayout->setSpacing(0);
+    // 两行：上面只有关闭按钮，下面选项卡铺满整行。
+    // 挤在同一行时选项卡会被右栏宽度和关闭按钮一起夹住，两个选项都展不开。
+    auto *topLayout = new QVBoxLayout(topBar);
+    topLayout->setContentsMargins(24, 8, 16, 0);
+    topLayout->setSpacing(6);
 
-    // 窗口最上面的连接类型选项卡。复用设置页那套 segment 样式（两个可勾选
-    // 按钮 + QSS），不单独造一套页签。
+    auto *closeRow = new QHBoxLayout;
+    closeRow->setContentsMargins(0, 0, 0, 0);
+    closeRow->setSpacing(0);
+    closeRow->addStretch();
+
+    // 连接类型选项卡。复用设置页那套 segment 样式（两个可勾选按钮 + QSS）。
     auto *protocolTabs = new QWidget(topBar);
     protocolTabs->setObjectName(QStringLiteral("ProtocolTabs"));
     protocolTabs->setAttribute(Qt::WA_StyledBackground, true);
+    protocolTabs->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     auto *protocolLayout = new QHBoxLayout(protocolTabs);
     protocolLayout->setContentsMargins(3, 3, 3, 3);
     protocolLayout->setSpacing(3);
@@ -320,10 +327,9 @@ ConnectionDialog::ConnectionDialog(ConnectionStore *store, KeyStore *keys, QWidg
     m_rdpTab = makeProtocolTab(QStringLiteral("远程桌面连接(Windows)"),
                                QStringLiteral("ProtocolRdpTab"));
     m_sshTab->setChecked(true);
-    protocolLayout->addWidget(m_sshTab);
-    protocolLayout->addWidget(m_rdpTab);
-    topLayout->addWidget(protocolTabs);
-    topLayout->addStretch();
+    // 两个选项各占一半，把整行铺满
+    protocolLayout->addWidget(m_sshTab, 1);
+    protocolLayout->addWidget(m_rdpTab, 1);
 
     // setCheckable 的按钮点自己会取消勾选，这里手动把互斥状态钉住
     connect(m_sshTab, &QPushButton::clicked, this, [this] {
@@ -355,7 +361,10 @@ ConnectionDialog::ConnectionDialog(ConnectionStore *store, KeyStore *keys, QWidg
     closeButton->setToolTip(QStringLiteral("关闭"));
     closeButton->setAutoDefault(false);
     connect(closeButton, &QPushButton::clicked, this, &QDialog::reject);
-    topLayout->addWidget(closeButton);
+    closeRow->addWidget(closeButton);
+
+    topLayout->addLayout(closeRow);
+    topLayout->addWidget(protocolTabs);
     paneLayout->addWidget(topBar);
 
     auto *formArea = new QWidget(pane);
