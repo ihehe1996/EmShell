@@ -33,7 +33,7 @@ namespace {
 // 一条边影的厚度（竖直边是宽度，水平边是高度）
 constexpr int kEdgeShadowSize = 12;
 
-// 连接表的列宽权重：名称 / 主机 / 端口 / 用户 / 状态 / 延迟 / 最近连接。
+// 连接表的列宽权重：名称 / 主机 / 端口 / 用户 / 状态 / 延迟。
 // **表头 ConnectionListHeader 和 ConnectionRow 共用这一组值**，改一边必须改另一边，
 // 否则表头和内容会错列。右侧操作区是固定宽度，不参与拉伸。
 constexpr int kColName = 22;
@@ -42,7 +42,6 @@ constexpr int kColPort = 7;
 constexpr int kColUser = 12;
 constexpr int kColStatus = 10;
 constexpr int kColLatency = 9;
-constexpr int kColLast = 12;
 constexpr int kColumnSpacing = 12;
 constexpr int kRowSidePadding = 12;
 constexpr int kRowHeight = 44;
@@ -95,20 +94,6 @@ protected:
         move(targetX, y());
     }
 };
-
-// 相对时间：几分钟前 / 几小时前 / 几天前
-QString humanizeSince(const QDateTime &when)
-{
-    if (!when.isValid())
-        return QStringLiteral("从未连接");
-
-    const qint64 secs = when.secsTo(QDateTime::currentDateTime());
-    if (secs < 60)       return QStringLiteral("刚刚");
-    if (secs < 3600)     return QStringLiteral("%1 分钟前").arg(secs / 60);
-    if (secs < 86400)    return QStringLiteral("%1 小时前").arg(secs / 3600);
-    if (secs < 86400 * 30) return QStringLiteral("%1 天前").arg(secs / 86400);
-    return when.toString(QStringLiteral("yyyy-MM-dd"));
-}
 
 } // namespace
 
@@ -936,19 +921,28 @@ ConnectionListHeader::ConnectionListHeader(QWidget *parent)
         layout->addWidget(item.first, item.second);
     };
 
-    add(column(QStringLiteral("名称"),     kColName));
-    add(column(QStringLiteral("主机"),     kColHost));
-    add(column(QStringLiteral("端口"),     kColPort));
-    add(column(QStringLiteral("用户"),     kColUser));
-    add(column(QStringLiteral("状态"),     kColStatus));
-    add(column(QStringLiteral("延迟"),     kColLatency));
-    add(column(QStringLiteral("最近连接"), kColLast));
+    add(column(QStringLiteral("名称"), kColName));
+    add(column(QStringLiteral("主机"), kColHost));
+    add(column(QStringLiteral("端口"), kColPort));
+    add(column(QStringLiteral("用户"), kColUser));
+    add(column(QStringLiteral("状态"), kColStatus));
+    add(column(QStringLiteral("延迟"), kColLatency));
 
     // 和行里那块固定宽度的操作区对齐。**必须用固定宽度的 QWidget，不能用
     // addSpacing()**：addSpacing 放在最后一项时，布局不把右边距算进去，
     // 所有列会多摊到 12px（实测列位置整体右移，和行对不上）。
     auto *actionSpace = new QWidget(this);
     actionSpace->setFixedWidth(kActionAreaWidth);
+    auto *actionLayout = new QHBoxLayout(actionSpace);
+    actionLayout->setContentsMargins(0, 0, 0, 0);
+    actionLayout->setSpacing(0);
+
+    // 操作列表头：下面三个图标按钮是星标 / 连接 / 更多，文字居中压在上面
+    auto *actionLabel = new ColumnLabel(QStringLiteral("操作"), actionSpace);
+    actionLabel->setProperty("role", QStringLiteral("columnHeader"));
+    actionLabel->setAlignment(Qt::AlignCenter);
+    actionLayout->addWidget(actionLabel, 1);
+
     layout->addWidget(actionSpace);
 }
 
@@ -1029,10 +1023,6 @@ ConnectionRow::ConnectionRow(const Connection &connection, const QString &groupN
     m_latency->setFont(Theme::monoFont(12));
     ignoreHint(m_latency);
 
-    m_lastUsed = new ColumnLabel(QString(), this);
-    m_lastUsed->setProperty("role", QStringLiteral("rowLast"));
-    ignoreHint(m_lastUsed);
-
     // 收藏 / 连接 / 更多。三个 30px 按钮，放进固定宽度的容器里，
     // 这样列宽不会因为按钮的状态变化。
     m_star = new QPushButton(this);
@@ -1079,7 +1069,6 @@ ConnectionRow::ConnectionRow(const Connection &connection, const QString &groupN
     layout->addWidget(m_user, kColUser);
     layout->addWidget(statusColumn, kColStatus);
     layout->addWidget(m_latency, kColLatency);
-    layout->addWidget(m_lastUsed, kColLast);
     layout->addWidget(actions);
 
     connect(m_connect, &QPushButton::clicked, this, [this] {
@@ -1155,8 +1144,6 @@ void ConnectionRow::refresh()
     m_port->setText(QString::number(m_connection.port));
     m_user->setFullText(m_connection.username.isEmpty() ? QStringLiteral("—")
                                                         : m_connection.username);
-    m_lastUsed->setText(humanizeSince(m_connection.lastUsedAt));
-
     m_star->setIcon(Icons::icon(Icon::Star,
                                 tokenColor(m_connection.favorite ? "warn" : "text-mute"), 16));
     m_star->setIconSize(QSize(16, 16));

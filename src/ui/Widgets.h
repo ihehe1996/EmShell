@@ -336,7 +336,7 @@ public:
 };
 
 // 一条连接。**表格的一行**，不是卡片：
-//   名称（分组色点 + 名字 + 分组名） / 主机 / 端口 / 用户 / 状态 / 延迟 / 最近连接 / 操作
+//   名称（分组色点 + 协议图标 + 名字） / 主机 / 端口 / 用户 / 状态 / 延迟 / 操作
 // 行的行为还是原来那些：双击连、星标收藏、右边按钮弹菜单。
 class ConnectionRow : public QFrame
 {
@@ -391,7 +391,6 @@ private:
     QLabel *m_statusDot = nullptr;
     QLabel *m_statusText = nullptr;
     QLabel *m_latency = nullptr;
-    QLabel *m_lastUsed = nullptr;
 
     QPushButton *m_star = nullptr;
     QPushButton *m_connect = nullptr;
