@@ -152,7 +152,7 @@ QPushButton[role="nav"][active="true"] { background: @nav-active-bg; }
    按钮的属性变了之后 Qt 不会重新解析子控件的样式，表现是切页后旧的那一项
    文字还是蓝的。规则只依赖控件自己的属性才安全。 */
 /* 当前页只靠颜色区分，不加粗 —— 中文一加粗，字形会明显变糊变挤 */
-QLabel[role="navText"]                 { font-size: 12px; color: @nav-text; }
+QLabel[role="navText"]                 { font-size: 13px; color: @nav-text; }
 QLabel[role="navText"][state="hover"]  { color: @nav-text-hover; }
 QLabel[role="navText"][state="active"] { color: @nav-text-active; }
 
