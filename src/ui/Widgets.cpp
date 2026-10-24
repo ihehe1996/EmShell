@@ -983,12 +983,15 @@ ConnectionRow::ConnectionRow(const Connection &connection, const QString &groupN
     ignoreHint(nameColumn);
     auto *nameLayout = new QHBoxLayout(nameColumn);
     nameLayout->setContentsMargins(0, 0, 0, 0);
-    nameLayout->setSpacing(6);
+    nameLayout->setSpacing(3);
     nameLayout->addWidget(m_groupDot);
 
     m_protocolIcon = new QLabel(nameColumn);
-    m_protocolIcon->setFixedSize(14, 14);
-    m_protocolIcon->hide();
+    // 14x16 的盒子 + 顶部 2px 内边距：内容区仍是 14x14，图标整体往下挪 1px。
+    // 直接居中会和汉字的视觉中心差一点点，看起来像浮在文字上方。
+    m_protocolIcon->setFixedSize(14, 16);
+    m_protocolIcon->setContentsMargins(0, 2, 0, 0);
+    m_protocolIcon->setAlignment(Qt::AlignCenter);
     nameLayout->addWidget(m_protocolIcon);
 
     nameLayout->addWidget(m_name, 1);
@@ -1141,13 +1144,12 @@ void ConnectionRow::refresh()
 {
     m_name->setFullText(m_connection.name.isEmpty() ? m_connection.host : m_connection.name);
 
-    // 远程桌面在名字前挂一个显示器图标，和 SSH 行一眼分得开
+    // 名字前统一挂一个协议图标：终端 = SSH，显示器 = 远程桌面。
+    // 两边都挂，列宽和名字的起点才不会因为协议不同而错开。
     const bool rdp = (m_connection.protocol == Protocol::Rdp);
-    m_protocolIcon->setVisible(rdp);
-    if (rdp) {
-        m_protocolIcon->setPixmap(Icons::pixmap(Icon::Monitor,
-                                                tokenColor("text-mute"), 14));
-    }
+    m_protocolIcon->setVisible(true);
+    m_protocolIcon->setPixmap(Icons::pixmap(rdp ? Icon::Monitor : Icon::Terminal,
+                                            tokenColor("text-mute"), 14));
 
     m_host->setFullText(m_connection.host);
     m_port->setText(QString::number(m_connection.port));
