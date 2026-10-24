@@ -24,7 +24,9 @@
 
 #include <QApplication>
 #include <QDateTime>
+#include <QEvent>
 #include <QJsonObject>
+#include <QLabel>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -1091,6 +1093,100 @@ int runUiShots(const QStringList &arguments)
 // 用来确认深色主题下 release notes、按钮和进度条的颜色是对的。
 //   --updateui
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// 左栏底部推荐链接的点击自检。这条链接是 QLabel，而 ConnectionDialog 把
+// 「左键按下」当成拖动窗口 —— 链接如果不自己收下 press，事件冒泡过去就会
+// 变成拖窗，release 被系统移动循环吃掉，看起来就是「点了没反应」。
+//   --adlinktest
+// 用 SendInput 真投一次鼠标点击（SetCursorPos 不产生消息），事件过滤器只
+// 统计 press / release 并在 release 处吃掉事件，避免真的拉起浏览器。
+// ---------------------------------------------------------------------------
+class AdClickProbe : public QObject
+{
+public:
+    int presses = 0;
+    int releases = 0;
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        Q_UNUSED(watched)
+        if (event->type() == QEvent::MouseButtonPress) {
+            ++presses;
+        } else if (event->type() == QEvent::MouseButtonRelease) {
+            ++releases;
+            return true;   // 拦住，别真去打开网页
+        }
+        return false;
+    }
+};
+
+int runAdLinkTest()
+{
+    QFile::remove(QStringLiteral("selftest.log"));
+    log(QStringLiteral("== 左栏推荐链接点击自检 =="));
+
+    QTimer::singleShot(0, [] {
+        QTimer::singleShot(800, [] {
+            QWidget *modal = QApplication::activeModalWidget();
+            if (!modal) {
+                log(QStringLiteral("  FAIL: 没等到对话框"));
+                qApp->quit();
+                return;
+            }
+
+            QLabel *link = nullptr;
+            for (QLabel *candidate : modal->findChildren<QLabel *>()) {
+                if (candidate->property("role").toString() == QLatin1String("railAd")) {
+                    link = candidate;
+                    break;
+                }
+            }
+            if (!link) {
+                log(QStringLiteral("  FAIL: 没找到推荐链接"));
+                if (auto *dialog = qobject_cast<QDialog *>(modal))
+                    dialog->reject();
+                qApp->quit();
+                return;
+            }
+
+            auto *probe = new AdClickProbe;
+            probe->setParent(modal);
+            link->installEventFilter(probe);
+
+            // mapToGlobal 是逻辑坐标，SendInput 要物理像素
+            const qreal dpr = link->devicePixelRatioF();
+            const QPoint center = link->mapToGlobal(link->rect().center());
+            SetCursorPos(qRound(center.x() * dpr), qRound(center.y() * dpr));
+
+            INPUT input{};
+            input.type = INPUT_MOUSE;
+            input.mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+            SendInput(1, &input, sizeof(INPUT));
+            input.mi.dwFlags = MOUSEEVENTF_LEFTUP;
+            SendInput(1, &input, sizeof(INPUT));
+            log(QStringLiteral("  -> 已在链接中心投递一次左键点击"));
+
+            QTimer::singleShot(600, modal, [modal, probe] {
+                check(probe->presses >= 1, QStringLiteral("链接收到鼠标按下"));
+                check(probe->releases >= 1,
+                      QStringLiteral("链接收到鼠标松开（点击没有被拖窗口吃掉）"));
+                if (auto *dialog = qobject_cast<QDialog *>(modal))
+                    dialog->reject();
+                qApp->quit();
+            });
+        });
+
+        ConnectionDialog::createNew(nullptr, nullptr, nullptr, nullptr);
+    });
+
+    QTimer::singleShot(8000, [] { qApp->quit(); });
+    qApp->exec();
+
+    flushLog();
+    return g_fail == 0 ? 0 : 1;
+}
+
 // ---------------------------------------------------------------------------
 // 「新建连接」对话框的外观截图。用真实的 ConnectionDialog，只是抓完就关。
 //   --dialogui
@@ -2249,6 +2345,7 @@ bool isSelfTestRequest(const QStringList &arguments)
            || arguments.contains(QStringLiteral("--rdptest"))
            || arguments.contains(QStringLiteral("--updateui"))
            || arguments.contains(QStringLiteral("--dialogui"))
+           || arguments.contains(QStringLiteral("--adlinktest"))
            || arguments.contains(QStringLiteral("--settingsui"))
            || arguments.contains(QStringLiteral("--themeswitchui"))
            || arguments.contains(QStringLiteral("--comboui"))
@@ -2288,6 +2385,8 @@ int runSelfTest(const QStringList &arguments)
         return runComboShot();
     if (arguments.contains(QStringLiteral("--updatepageui")))
         return runUpdatePageShot();
+    if (arguments.contains(QStringLiteral("--adlinktest")))
+        return runAdLinkTest();
     if (arguments.contains(QStringLiteral("--dialogui")))
         return runConnectionDialogShot();
     if (arguments.contains(QStringLiteral("--updateui")))

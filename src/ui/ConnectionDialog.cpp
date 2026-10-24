@@ -64,11 +64,23 @@ public:
     }
 
 protected:
+    // **必须把左键按下收下来。**
+    // QLabel 默认忽略 mousePress，事件会一路冒到 ConnectionDialog::mousePressEvent；
+    // 那边看到左键就 startSystemMove() 拖窗口，系统的移动循环会把随后的 release
+    // 吃掉 —— 表现就是链接悬停正常、点了却什么都不发生。
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton)
+            event->accept();
+        else
+            QLabel::mousePressEvent(event);
+    }
+
     void mouseReleaseEvent(QMouseEvent *event) override
     {
         if (event->button() == Qt::LeftButton && rect().contains(event->position().toPoint()))
             QDesktopServices::openUrl(m_url);
-        QLabel::mouseReleaseEvent(event);
+        event->accept();
     }
 
     void enterEvent(QEnterEvent *event) override
