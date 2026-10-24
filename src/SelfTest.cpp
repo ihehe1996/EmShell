@@ -43,6 +43,7 @@
 #include <QTemporaryDir>
 #include <QTextStream>
 #include <QTimer>
+#include <QToolButton>
 
 #include <iterator>
 #include <utility>
@@ -1875,11 +1876,98 @@ int runTabShot(int width, int height, int count)
                     terminal->openLocalSession();
             }
         });
+        // EMSHELL_TABUI_MOVECLOSE=1：复现「拖动标签后关错标签」。
+        // 开两个终端，把第 2 个拖到第 1 个前面，再关掉原来的第 1 个，
+        // 应该只剩第 2 个、并且剩下的那个还能正常关掉。
+        const bool moveClose = qEnvironmentVariableIsSet("EMSHELL_TABUI_MOVECLOSE");
+
         // 第一个标签换成很长的名字，检查宽度和关闭按钮还对不对
-        QTimer::singleShot(900, &window, [&window] {
+        QTimer::singleShot(900, &window, [&window, moveClose] {
+            if (moveClose)
+                return;   // 拖动测试要保留「本地 1 / 本地 2」这两个名字
             if (auto *tabs = window.findChild<QTabWidget *>())
                 tabs->setTabText(0, QStringLiteral("生产环境 - 数据库主节点"));
         });
+
+        if (moveClose) {
+            QTimer::singleShot(1400, &window, [&window, terminal] {
+                auto *tabs = window.findChild<QTabWidget *>();
+                if (!tabs || tabs->count() < 2) {
+                    check(false, QStringLiteral("拖动测试需要至少两个标签"));
+                    return;
+                }
+                const int before = tabs->count();
+                tabs->tabBar()->moveTab(1, 0);
+                log(QStringLiteral("  已把第 2 个标签拖到最前，现在是「%1」/「%2」")
+                        .arg(tabs->tabText(0), tabs->tabText(1)));
+
+                QTimer::singleShot(300, &window, [&window, terminal, before] {
+                    auto *tabs = window.findChild<QTabWidget *>();
+                    if (!tabs || tabs->count() < 1) {
+                        check(false, QStringLiteral("拖动后标签不见了"));
+                        return;
+                    }
+
+                    // 关掉视觉上最后一个（也就是原来的第 1 个）
+                    const int victimIndex = tabs->count() - 1;
+                    QWidget *victimPage = tabs->widget(victimIndex);
+                    QToolButton *close = nullptr;
+                    for (QToolButton *button
+                         : tabs->tabBar()->findChildren<QToolButton *>(
+                               QStringLiteral("TabCloseButton"))) {
+                        if (button->property("page").value<QWidget *>() == victimPage) {
+                            close = button;
+                            break;
+                        }
+                    }
+                    if (!close) {
+                        check(false, QStringLiteral("找不到拖动后标签的关闭按钮"));
+                        return;
+                    }
+                    const QString victimTitle = tabs->tabText(victimIndex);
+                    close->click();
+                    log(QStringLiteral("  已关闭拖动后的「%1」").arg(victimTitle));
+
+                    QTimer::singleShot(900, &window, [&window, terminal, before] {
+                        auto *tabs = window.findChild<QTabWidget *>();
+                        check(tabs && tabs->count() == before - 1,
+                              QStringLiteral("关闭拖动后的标签只关掉一个"));
+                        check(terminal && terminal->tabCount() == before - 1,
+                              QStringLiteral("页面内部的标签记录同步减少"));
+
+                        if (tabs && before == 2) {
+                            check(tabs->tabText(0) == QStringLiteral("本地 2"),
+                                  QStringLiteral("剩下的是被拖到前面的「本地 2」"),
+                                  tabs->tabText(0));
+                        }
+
+                        // 剩下的必须还能关；索引错乱时这一步会关不动
+                        if (tabs && tabs->count() > 0) {
+                            QWidget *page = tabs->widget(0);
+                            QToolButton *remainingClose = nullptr;
+                            for (QToolButton *button
+                                 : tabs->tabBar()->findChildren<QToolButton *>(
+                                       QStringLiteral("TabCloseButton"))) {
+                                if (button->property("page").value<QWidget *>() == page) {
+                                    remainingClose = button;
+                                    break;
+                                }
+                            }
+                            if (remainingClose)
+                                remainingClose->click();
+                        }
+
+                        QTimer::singleShot(900, &window, [&window, terminal] {
+                            auto *tabs = window.findChild<QTabWidget *>();
+                            check(tabs && tabs->count() == 0,
+                                  QStringLiteral("剩下的标签还能正常关闭"));
+                            check(terminal && terminal->tabCount() == 0,
+                                  QStringLiteral("关完后回到空状态"));
+                        });
+                    });
+                });
+            });
+        }
         // 切回第一个，检查轨道上的「口子」有没有跟着选中项走
         QTimer::singleShot(3000, &window, [&window] {
             if (auto *tabs = window.findChild<QTabWidget *>())

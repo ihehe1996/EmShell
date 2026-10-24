@@ -479,6 +479,17 @@ TerminalPage::TerminalPage(ConnectionStore *store, KeyStore *keys, QWidget *pare
     m_tabBar->setMovable(true);
     m_tabBar->setDocumentMode(true);
 
+    // **拖动标签后必须把 Tab::index 重新同步一遍。**
+    // QTabBar 的拖动只改它自己的顺序，Tab 里缓存的 index 不会跟着变。不同步的话，
+    // 关闭按钮按「可视位置」传进来的 index 会在 tabAt() 里按旧编号找到另一个标签：
+    // 结果就是关掉 A 的会话、却把 B 的页面从标签栏里删掉，两个一起消失、页面空白。
+    // QTabWidget 自己也在 tabMoved 上挂了一个槽来挪页面，它的连接在构造函数里先建立，
+    // 所以这里 indexOf() 拿到的已经是移动后的顺序。
+    connect(m_tabBar->tabBar(), &QTabBar::tabMoved, this, [this](int, int) {
+        for (Tab *tab : m_tabs)
+            tab->index = m_tabBar->indexOf(tab->container);
+    });
+
     // 标签名一个字都不省略，永远完整显示（宽度由 TerminalTabBar::tabSizeHint 按
     // 名字算）。标签多到装不下时由标签栏滚动 —— 滚动时边缘会露出半个标签，那是
     // 「滚到这儿了」，不是名字被截断。
